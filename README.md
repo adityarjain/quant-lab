@@ -269,7 +269,16 @@ Each item comes from a specific failure above. All of them would need to be fit 
 | `frontier.py` | mean-variance optimizer, frontier, walk-forward re-fitting |
 | `montecarlo.py` | normal and block-bootstrap simulation, VaR/CVaR, drawdowns |
 | `run.py` | regenerates every figure and table in `figures/` |
-| `tests.py` | one assert-based check per module (look-ahead, closed forms, synthetic data) |
+| `app.py` | interactive Streamlit dashboard over the same modules (UI only, no logic of its own) |
+| `tests.py` | one assert-based check per module (look-ahead, closed forms, synthetic data) + a headless dashboard check |
+
+## Dashboard
+```bash
+streamlit run app.py
+```
+Five tabs (Verdict, M1–M4) recompute live from the tested modules, so every slider goes through the same engine, cost model and train/test split as the paper. It opens on the research defaults, and `tests.py` checks that those defaults reproduce the published test-period Sharpe ratios. You can vary transaction costs, momentum lookback and holding fraction, pairs window and thresholds, the optimizer's weight cap, and Monte Carlo paths, horizon and block length.
+
+Use it to see **how fragile each result is**, not to search for better parameters: any setting chosen after looking at the 2019+ numbers is fit on the test period and is no longer an out-of-sample result. The sidebar says so too.
 
 ## Reproduce
 Python 3.14; versions pinned in `requirements.txt`. Prices are read from the committed cache, so a clean clone reproduces every table in `figures/` byte-for-byte.

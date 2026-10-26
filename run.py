@@ -178,12 +178,12 @@ def m2(prices: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
-def strategy_streams(prices: pd.DataFrame) -> pd.DataFrame:
+def strategy_streams(prices: pd.DataFrame, cost_bps: float = COST_BPS) -> pd.DataFrame:
     """Daily NET returns of the building blocks the M3 optimizer allocates across."""
     stocks = [t for t in prices.columns if t not in data.BENCHMARKS]
     train, _ = data.split(prices)
-    mom = backtest.run(momentum.cross_sectional(prices, stocks), prices, COST_BPS)["net"]
-    prs = backtest.run(pairs.portfolio(prices, pairs.select(pairs.scan(train))), prices, COST_BPS)["net"]
+    mom = backtest.run(momentum.cross_sectional(prices, stocks), prices, cost_bps)["net"]
+    prs = backtest.run(pairs.portfolio(prices, pairs.select(pairs.scan(train))), prices, cost_bps)["net"]
     streams = pd.DataFrame({"Momentum": mom, "Pairs": prs, "SPY": prices["SPY"].pct_change(),
                             "BND": prices["BND"].pct_change()})
     first_live = mom.ne(0).idxmax()  # drop momentum's 12-month warm-up so its stats aren't diluted by zeros

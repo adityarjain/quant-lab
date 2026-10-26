@@ -88,19 +88,20 @@ def spread_z(prices: pd.DataFrame, a: str, b: str, beta: float, window: int = WI
     return spread, (spread - roll.mean()) / roll.std()
 
 
-def pair_weights(prices: pd.DataFrame, a: str, b: str, beta: float) -> pd.DataFrame:
+def pair_weights(prices: pd.DataFrame, a: str, b: str, beta: float, window: int = WINDOW,
+                 entry: float = ENTRY, exit: float = EXIT, stop: float = STOP) -> pd.DataFrame:
     """Long/short weights scaled to gross exposure 1: +1 spread = long $1/(1+beta) A, short $beta/(1+beta) B.
     # ponytail: short borrow fees and rebates ignored; add a borrow-cost bps on the short leg if needed.
     """
-    _, z = spread_z(prices, a, b, beta)
-    pos = positions(z)
+    _, z = spread_z(prices, a, b, beta, window)
+    pos = positions(z, entry, exit, stop)
     w = pd.DataFrame(0.0, index=prices.index, columns=prices.columns)
     w[a] = pos / (1 + beta)
     w[b] = -pos * beta / (1 + beta)
     return w
 
 
-def portfolio(prices: pd.DataFrame, chosen: pd.DataFrame) -> pd.DataFrame:
-    """Equal capital per pair."""
-    ws = [pair_weights(prices, r.a, r.b, r.beta) for r in chosen.itertuples()]
+def portfolio(prices: pd.DataFrame, chosen: pd.DataFrame, **rules) -> pd.DataFrame:
+    """Equal capital per pair. `rules` = optional window/entry/exit/stop overrides."""
+    ws = [pair_weights(prices, r.a, r.b, r.beta, **rules) for r in chosen.itertuples()]
     return sum(ws) / len(ws)

@@ -169,6 +169,24 @@ def test_data():
     assert train.index.max() < pd.Timestamp(data.SPLIT) <= test.index.min()
 
 
+def test_app():
+    """Dashboard smoke test: runs headless, no errors, and its defaults reproduce the published
+    test-period Sharpe ratios (so the UI can't silently drift from run.py)."""
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_file("app.py", default_timeout=300).run()
+    assert not at.exception and not at.error, [e.value for e in at.exception]
+    sharpe = lambda i, name: at.dataframe[i].value.query("period == 'test' and strategy == @name")["Sharpe (net)"].item()
+    assert round(sharpe(0, "XS momentum 12-1"), 2) == 0.87
+    assert round(sharpe(1, "Pairs portfolio"), 2) == 0.27
+    assert round(sharpe(3, "Equal-weight 4"), 2) == 0.97 and round(sharpe(3, "Max-Sharpe (train fit)"), 2) == 0.85
+
+    at.sidebar.slider[0].set_value(0).run()  # zero costs -> net == gross through the same engine
+    assert not at.exception
+    m1 = at.dataframe[0].value
+    assert np.allclose(m1["Sharpe (net)"], m1["Sharpe (gross)"])
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):
