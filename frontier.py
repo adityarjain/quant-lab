@@ -28,7 +28,10 @@ def _solve(objective, n: int, cap: float, extra=()):
     cons = [{"type": "eq", "fun": lambda w: w.sum() - 1}, *extra]
     res = minimize(objective, np.full(n, 1 / n), method="SLSQP", bounds=[(0, cap)] * n,
                    constraints=cons, options={"ftol": 1e-12, "maxiter": 1000})
-    if not res.success:
+    # Status 8 ("positive directional derivative") = converged but couldn't verify progress at ftol;
+    # accept it only if the point is feasible. Anything else is a real failure.
+    feasible = np.isclose(res.x.sum(), 1, atol=1e-8) and (res.x > -1e-9).all() and (res.x < cap + 1e-9).all()
+    if not (res.success or (res.status == 8 and feasible)):
         raise RuntimeError(f"optimizer failed: {res.message}")
     return np.clip(res.x, 0, cap)
 

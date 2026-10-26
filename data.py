@@ -64,6 +64,31 @@ def load_prices(refresh: bool = False) -> pd.DataFrame:
     return pd.read_parquet(CACHE)
 
 
+RF_CACHE = DATA_DIR / "rf.parquet"
+RF_META = DATA_DIR / "meta_rf.json"
+RF_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DTB3&cosd=2009-12-01"
+
+
+def load_rf(index: pd.DatetimeIndex, refresh: bool = False) -> pd.Series:
+    """Daily risk-free rate (3-month T-bill, FRED DTB3) aligned to `index`, as a simple daily return.
+
+    Cached to data/rf.parquet on first use. Annual percent -> fraction / 252 per trading day.
+    # ponytail: DTB3 is a discount-basis yield; the bank-discount vs investment-yield gap is a few bps,
+    # far below anything that matters here. Use an investment-yield series if it ever does.
+    """
+    if refresh or not RF_CACHE.exists():
+        raw = pd.read_csv(RF_URL, index_col=0, parse_dates=True, na_values=".")
+        rf = (raw.iloc[:, 0] / 100).rename("rf_annual").dropna()
+        DATA_DIR.mkdir(exist_ok=True)
+        rf.to_frame().to_parquet(RF_CACHE)
+        RF_META.write_text(json.dumps({"downloaded": date.today().isoformat(), "source": RF_URL,
+                                       "series": "DTB3, 3-month T-bill secondary market rate, % p.a.",
+                                       "end": rf.index[-1].date().isoformat()}, indent=2))
+    annual = pd.read_parquet(RF_CACHE)["rf_annual"]
+    # Yield known at the previous close earns over the current day; ffill bridges holidays / the newest days.
+    return (annual.reindex(annual.index.union(index)).ffill().reindex(index).shift(1) / 252).fillna(0.0)
+
+
 def split(df: pd.DataFrame):
     """(train, test) by the fixed SPLIT date."""
     return df[df.index < SPLIT], df[df.index >= SPLIT]

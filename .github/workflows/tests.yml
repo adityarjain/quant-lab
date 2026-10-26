@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Checks (look-ahead guard, closed forms, synthetic data, dashboard)
+        run: python tests.py
+
+  reproduce:
+    # Every results table must regenerate byte-for-byte from the committed price/T-bill caches.
+    # Non-blocking until it has passed on Linux once: last-digit float differences between macOS and
+    # Linux BLAS could flip a rounded number, which would be a platform artefact, not a research change.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python run.py
+      - name: Tables unchanged
+        run: git diff --exit-code -- 'figures/*.md'

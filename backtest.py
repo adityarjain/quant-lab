@@ -10,10 +10,13 @@ import pandas as pd
 TRADING_DAYS = 252
 
 
-def run(weights: pd.DataFrame, prices: pd.DataFrame, cost_bps: float = 10.0) -> pd.DataFrame:
+def run(weights: pd.DataFrame, prices: pd.DataFrame, cost_bps: float = 10.0,
+        rf: pd.Series | None = None) -> pd.DataFrame:
     """Daily gross/net returns and turnover for a weights frame.
 
     cost = cost_bps per unit of turnover (sum of |change in weight| across tickers).
+    rf   = daily risk-free return; capital not used to fund long positions (1 - sum of long
+           weights) earns it. Short-sale proceeds earn nothing (no rebate), the conservative case.
     # ponytail: holds target weights constant between signal changes (implicit daily
     # rebalance) and ignores drift turnover, so costs are slightly understated; track
     # drifted weights if a high-turnover strategy makes this matter.
@@ -23,6 +26,8 @@ def run(weights: pd.DataFrame, prices: pd.DataFrame, cost_bps: float = 10.0) -> 
     held = w.shift(1).fillna(0.0)
     turnover = (held - held.shift(1).fillna(0.0)).abs().sum(axis=1)
     gross = (held * rets).sum(axis=1)
+    if rf is not None:
+        gross = gross + (1 - held.clip(lower=0).sum(axis=1)) * rf.reindex(prices.index).fillna(0.0)
     net = gross - turnover * cost_bps / 1e4
     return pd.DataFrame({"gross": gross, "net": net, "turnover": turnover})
 
@@ -32,15 +37,22 @@ def drawdown(returns: pd.Series) -> pd.Series:
     return equity / equity.cummax() - 1
 
 
-def metrics(returns: pd.Series, turnover: pd.Series | None = None) -> dict:
-    """Annualized summary. Sharpe uses rf = 0 (stated in README)."""
+def sharpe(returns: pd.Series, rf: pd.Series | None = None) -> float:
+    """Annualized Sharpe of returns in excess of rf (rf = None means 0)."""
+    ex = returns if rf is None else returns - rf.reindex(returns.index).fillna(0.0)
+    sd = ex.std()
+    return float(ex.mean() / sd * np.sqrt(TRADING_DAYS)) if sd > 0 else np.nan
+
+
+def metrics(returns: pd.Series, turnover: pd.Series | None = None, rf: pd.Series | None = None) -> dict:
+    """Annualized summary. Sharpe is in excess of `rf` (T-bills in run.py)."""
     n = len(returns)
     equity = (1 + returns).prod()
     vol = returns.std() * np.sqrt(TRADING_DAYS)
     out = {
         "CAGR": equity ** (TRADING_DAYS / n) - 1 if n else np.nan,
         "vol": vol,
-        "Sharpe": returns.mean() * TRADING_DAYS / vol if vol > 0 else np.nan,
+        "Sharpe": sharpe(returns, rf),
         "maxDD": drawdown(returns).min(),
     }
     if turnover is not None:

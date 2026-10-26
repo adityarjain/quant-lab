@@ -14,6 +14,7 @@ import frontier
 import momentum
 import montecarlo as mc
 import pairs
+import significance
 
 FIG = Path(__file__).parent / "figures"
 COST_BPS = 10
@@ -30,11 +31,18 @@ plt.rcParams.update({
 })
 
 
-def metrics_table(results: dict[str, pd.DataFrame]) -> pd.DataFrame:
+def excess(returns: pd.DataFrame, rf: pd.Series) -> pd.DataFrame:
+    """Returns minus the daily T-bill rate, row by row."""
+    return returns.sub(rf.reindex(returns.index).fillna(0.0), axis=0)
+
+
+def metrics_table(results: dict[str, pd.DataFrame], rf: pd.Series | None = None) -> pd.DataFrame:
+    """Train/test rows per strategy; Sharpe is in excess of `rf`."""
     rows = []
     for name, res in results.items():
         for period, part in zip(("train", "test"), data.split(res)):
-            g, n = backtest.metrics(part["gross"]), backtest.metrics(part["net"], part["turnover"])
+            g = backtest.metrics(part["gross"], rf=rf)
+            n = backtest.metrics(part["net"], part["turnover"], rf=rf)
             rows.append({"strategy": name, "period": period, "Sharpe (gross)": g["Sharpe"],
                          "Sharpe (net)": n["Sharpe"], "CAGR (net)": n["CAGR"], "vol": n["vol"],
                          "maxDD": n["maxDD"], "turnover/yr": n["turnover"]})
@@ -64,7 +72,8 @@ def m1(prices: pd.DataFrame) -> pd.DataFrame:
         "Equal-weight 48": momentum.equal_weight(prices, stocks),
         "Buy & hold SPY": momentum.buy_and_hold(prices, "SPY"),
     }
-    results = {k: backtest.run(w, prices, COST_BPS) for k, w in strategies.items()}
+    rf = data.load_rf(prices.index)
+    results = {k: backtest.run(w, prices, COST_BPS, rf) for k, w in strategies.items()}
 
     fig, (ax, dd) = plt.subplots(2, 1, figsize=(11, 7), sharex=True, gridspec_kw={"height_ratios": [3, 1]})
     ends = {}
@@ -95,9 +104,9 @@ def m1(prices: pd.DataFrame) -> pd.DataFrame:
     fig.savefig(FIG / "m1_momentum.png", dpi=150)
     plt.close(fig)
 
-    table = metrics_table(results)
+    table = metrics_table(results, rf)
     (FIG / "m1_metrics.md").write_text(to_markdown(table))
-    return table
+    return table, results
 
 
 def m2(prices: pd.DataFrame) -> pd.DataFrame:
@@ -129,7 +138,8 @@ def m2(prices: pd.DataFrame) -> pd.DataFrame:
 
     strategies = {"Pairs portfolio (5)": pairs.portfolio(prices, chosen)}
     strategies |= {f"{r.a}/{r.b}": pairs.pair_weights(prices, r.a, r.b, r.beta) for r in chosen.itertuples()}
-    results = {k: backtest.run(w, prices, COST_BPS) for k, w in strategies.items()}
+    rf = data.load_rf(prices.index)
+    results = {k: backtest.run(w, prices, COST_BPS, rf) for k, w in strategies.items()}
 
     # 4-panel walkthrough of the strongest pair + the portfolio equity.
     top = chosen.iloc[0]
@@ -169,25 +179,29 @@ def m2(prices: pd.DataFrame) -> pd.DataFrame:
 
     sel = chosen[["sector", "a", "b", "corr", "pvalue", "p_test", "beta", "half_life"]]
     (FIG / "m2_pairs.md").write_text(to_markdown(sel, pct=(), digits=3))
-    table = metrics_table(results)
+    table = metrics_table(results, rf)
     (FIG / "m2_metrics.md").write_text(to_markdown(table))
     print(f"scan: {len(scanned)} pairs, {passed.sum()} cointegrated at 5% "
           f"(~{0.05 * len(scanned):.0f} expected by chance); corr>0.7: {(scanned['corr'] > 0.7).sum()}, "
           f"of which not cointegrated: {((scanned['corr'] > 0.7) & ~passed).sum()}")
     print(sel.round(3).to_string(index=False))
-    return table
+    return table, results
 
 
 def strategy_streams(prices: pd.DataFrame, cost_bps: float = COST_BPS) -> pd.DataFrame:
     """Daily NET returns of the building blocks the M3 optimizer allocates across."""
     stocks = [t for t in prices.columns if t not in data.BENCHMARKS]
     train, _ = data.split(prices)
-    mom = backtest.run(momentum.cross_sectional(prices, stocks), prices, cost_bps)["net"]
-    prs = backtest.run(pairs.portfolio(prices, pairs.select(pairs.scan(train))), prices, cost_bps)["net"]
+    rf = data.load_rf(prices.index)
+    mom_w = momentum.cross_sectional(prices, stocks)
+    mom = backtest.run(mom_w, prices, cost_bps, rf)["net"]
+    prs = backtest.run(pairs.portfolio(prices, pairs.select(pairs.scan(train))), prices, cost_bps, rf)["net"]
     streams = pd.DataFrame({"Momentum": mom, "Pairs": prs, "SPY": prices["SPY"].pct_change(),
                             "BND": prices["BND"].pct_change()})
-    first_live = mom.ne(0).idxmax()  # drop momentum's 12-month warm-up so its stats aren't diluted by zeros
-    return streams.loc[first_live:]
+    # Drop momentum's 12-month warm-up (all cash) so its stats aren't diluted. Detected from positions,
+    # not returns: idle cash now earns T-bills, so warm-up returns are no longer exactly zero.
+    first_signal = mom_w.index.get_loc(mom_w.sum(axis=1).gt(0).idxmax())
+    return streams.iloc[first_signal + 1:]  # positions are held from the day after the signal
 
 
 def sector_streams(prices: pd.DataFrame) -> pd.DataFrame:
@@ -209,7 +223,7 @@ def frontier_panel(ax, returns: pd.DataFrame, title: str):
     ax.plot(f["vol"], f["ret"], color=INK, linewidth=2, label=f"efficient frontier (cap {frontier.CAP:.0%})")
     ms_w, mv_w = frontier.max_sharpe(mu, cov), frontier.min_variance(mu, cov)
     r, v, s = frontier.perf(ms_w, mu, cov)
-    ax.plot([0, v * 1.6], [0, r * 1.6], color=SERIES[3], linestyle="--", linewidth=1, label="capital market line (rf = 0)")
+    ax.plot([0, v * 1.6], [0, r * 1.6], color=SERIES[3], linestyle="--", linewidth=1, label="capital market line (from T-bills)")
     # Max Sharpe drawn as a larger ring under min variance, so both stay visible if they coincide.
     ax.scatter([v], [r], s=200, facecolor="none", edgecolor=SERIES[1], linewidth=2.5, zorder=5,
                label=f"max Sharpe ({s:.2f})")
@@ -226,7 +240,7 @@ def frontier_panel(ax, returns: pd.DataFrame, title: str):
         ax.annotate(name, (x, y), xytext=(5, -11 if clash else 3), textcoords="offset points", fontsize=8, color=INK2)
         placed.append((x, y))
     ax.set_xlabel("Volatility (annualized)")
-    ax.set_ylabel("Expected return (annualized)")
+    ax.set_ylabel("Expected excess return over T-bills (annualized)")
     ax.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
     ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
     ax.set_title(title, loc="left")
@@ -236,12 +250,14 @@ def frontier_panel(ax, returns: pd.DataFrame, title: str):
 
 def m3(prices: pd.DataFrame) -> pd.DataFrame:
     streams = strategy_streams(prices)
+    rf = data.load_rf(prices.index)
     train_s, test_s = data.split(streams)
-    sectors_train, _ = data.split(sector_streams(prices))
+    sectors_train, _ = data.split(excess(sector_streams(prices), rf))
 
+    # Optimize on returns in excess of T-bills, so max Sharpe is the true tangency portfolio.
     fig, (a1, a2) = plt.subplots(1, 2, figsize=(14, 6))
     frontier_panel(a1, sectors_train, "M3a · 8 sector baskets + BND (train)")
-    sc, ms_w, mv_w = frontier_panel(a2, train_s, "M3b · Strategies + SPY + BND (train)")
+    sc, ms_w, mv_w = frontier_panel(a2, excess(train_s, rf), "M3b · Strategies + SPY + BND (train)")
     fig.subplots_adjust(right=0.9, wspace=0.18)
     fig.colorbar(sc, cax=fig.add_axes([0.92, 0.15, 0.012, 0.7]), label="Sharpe of random portfolio (capped)")
     fig.savefig(FIG / "m3_frontier.png", dpi=150, bbox_inches="tight")
@@ -251,7 +267,7 @@ def m3(prices: pd.DataFrame) -> pd.DataFrame:
     # Each stream's equity curve is treated as an asset, so the same engine charges rebalancing costs.
     equity = (1 + streams).cumprod()
     const = lambda w: pd.DataFrame([w.to_numpy()] * len(streams), index=streams.index, columns=streams.columns)
-    wf = frontier.walk_forward(streams)
+    wf = frontier.walk_forward(excess(streams, rf))
     allocs = {
         "Max-Sharpe (train fit)": const(ms_w),
         "Walk-forward max-Sharpe": wf,
@@ -259,7 +275,7 @@ def m3(prices: pd.DataFrame) -> pd.DataFrame:
         "SPY": const(pd.Series([0, 0, 1, 0], index=streams.columns, dtype=float)),
     }
     live0 = wf.sum(axis=1).gt(0).idxmax()  # walk-forward needs 3 years of history; compare all from then
-    results = {k: backtest.run(w, equity, COST_BPS).loc[live0:] for k, w in allocs.items()}
+    results = {k: backtest.run(w, equity, COST_BPS, rf).loc[live0:] for k, w in allocs.items()}
 
     fig, axs = plt.subplots(3, 1, figsize=(11, 11), gridspec_kw={"height_ratios": [1.2, 1.6, 2]})
     ax = axs[0]
@@ -304,13 +320,13 @@ def m3(prices: pd.DataFrame) -> pd.DataFrame:
     (FIG / "m3_weights.md").write_text(to_markdown(
         pd.DataFrame({"asset": ms_w.index, "max Sharpe": ms_w.values, "min variance": mv_w.values}),
         pct=("max Sharpe", "min variance")))
-    table = metrics_table(results)
+    table = metrics_table(results, rf)
     (FIG / "m3_metrics.md").write_text(to_markdown(table))
     print("train correlations:\n", corr.round(2).to_string())
     print("weights:\n", pd.DataFrame({"max_sharpe": ms_w, "min_var": mv_w}).round(3).to_string())
     swing = wf.loc[wf.sum(axis=1) > 0].agg(["min", "max"]).round(2)
     print("walk-forward weight range:\n", swing.to_string())
-    return table
+    return table, results
 
 
 def m4(prices: pd.DataFrame) -> pd.DataFrame:
@@ -318,7 +334,7 @@ def m4(prices: pd.DataFrame) -> pd.DataFrame:
     against what actually happened in test."""
     streams = strategy_streams(prices)
     train_s, test_s = data.split(streams)
-    ms_w = frontier.max_sharpe(*frontier.annualize(train_s))
+    ms_w = frontier.max_sharpe(*frontier.annualize(excess(train_s, data.load_rf(prices.index))))
     weights = {
         "Max-Sharpe (M3)": ms_w,
         "Equal-weight 4": pd.Series(0.25, index=streams.columns),
@@ -405,22 +421,137 @@ def m4(prices: pd.DataFrame) -> pd.DataFrame:
     return risk
 
 
+# The out-of-sample verdict set, in README order, and the head-to-head questions M8 tests.
+VERDICT = ["Buy & hold SPY", "Equal-weight 48", "XS momentum 12-1", "MA 50/200 on SPY", "Pairs portfolio (5)",
+           "Max-Sharpe (train fit)", "Walk-forward max-Sharpe", "Equal-weight 4"]
+COMPARISONS = [("Equal-weight 4", "Max-Sharpe (train fit)"), ("Walk-forward max-Sharpe", "Max-Sharpe (train fit)"),
+               ("XS momentum 12-1", "Equal-weight 48"), ("Equal-weight 48", "Buy & hold SPY"),
+               ("Buy & hold SPY", "Equal-weight 4")]
+
+
+def m8(results: dict, rf: pd.Series) -> pd.DataFrame:
+    """Is any test-period Sharpe, or any difference between two, distinguishable from luck?"""
+    ex = {k: excess(data.split(results[k])[1]["net"], rf) for k in VERDICT}
+    trials = np.array([e.mean() / e.std() for e in ex.values()])  # per-period Sharpes of the N tried
+    sr0 = significance.expected_max_sharpe(trials) * np.sqrt(mc.TRADING_DAYS)
+    rows = []
+    for k, e in ex.items():
+        point, lo, hi = significance.sharpe_ci(e, seed=data.SEED)
+        rows.append({"strategy": k, "Sharpe": point, "95% CI low": lo, "95% CI high": hi,
+                     "PSR (SR > 0)": significance.psr(e), f"DSR (N = {len(ex)})": significance.dsr(e, trials)})
+    table = pd.DataFrame(rows)
+    diffs = []
+    for a, b in COMPARISONS:
+        d, lo, hi, p = significance.sharpe_diff(ex[a], ex[b], seed=data.SEED)
+        diffs.append({"comparison": f"{a} − {b}", "ΔSharpe": d, "95% CI low": lo, "95% CI high": hi, "p-value": p})
+    diffs = pd.DataFrame(diffs)
+
+    fig, ax = plt.subplots(figsize=(10, 5.2))
+    y = np.arange(len(table))[::-1]
+    ax.hlines(y, table["95% CI low"], table["95% CI high"], color=SERIES[0], linewidth=2.2)
+    ax.scatter(table["Sharpe"], y, s=60, color=SERIES[0], edgecolor=SURFACE, linewidth=1.5, zorder=3)
+    for yi, (_, r) in zip(y, table.iterrows()):
+        ax.text(r["95% CI high"] + 0.04, yi, f"{r['Sharpe']:.2f}  [{r['95% CI low']:.2f}, {r['95% CI high']:.2f}]",
+                va="center", fontsize=8, color=INK2)
+    ax.axvline(0, color=MUTED, linewidth=1)
+    ax.axvline(sr0, color=SERIES[1], linestyle="--", linewidth=1.2)
+    ax.text(sr0, len(table) - 0.35, f" best-of-{len(ex)} by luck: {sr0:.2f}", color=SERIES[1], fontsize=8,
+            va="bottom")
+    ax.set_yticks(y, table["strategy"])
+    ax.set_ylim(-0.7, len(table) - 0.1)
+    ax.set_xlim(None, table["95% CI high"].max() + 0.55)
+    ax.set_xlabel("Annualized Sharpe over T-bills, test 2019–2026 (net), with 95% block-bootstrap CI")
+    ax.set_title("M8 · Out-of-sample Sharpe ratios with their uncertainty", loc="left")
+    fig.tight_layout()
+    fig.savefig(FIG / "m8_sharpe_ci.png", dpi=150)
+    plt.close(fig)
+
+    (FIG / "m8_significance.md").write_text(to_markdown(table, pct=(), digits=2))
+    (FIG / "m8_differences.md").write_text(to_markdown(diffs, pct=(), digits=2))
+    print(f"expected best-of-{len(ex)} Sharpe under the null: {sr0:.2f}")
+    print(diffs.round(3).to_string(index=False))
+    return table
+
+
+def m9(prices: pd.DataFrame) -> pd.DataFrame:
+    """Backtest four 1-day VaR models on 2019–2026; only the EWMA ones are allowed to adapt."""
+    streams = strategy_streams(prices)
+    rf = data.load_rf(prices.index)
+    train_s = data.split(streams)[0]
+    weights = {
+        "Max-Sharpe (M3)": frontier.max_sharpe(*frontier.annualize(excess(train_s, rf))),
+        "Equal-weight 4": pd.Series(0.25, index=streams.columns),
+        "SPY": pd.Series([0, 0, 1, 0], index=streams.columns, dtype=float),
+    }
+    rows, spy = [], {}
+    for pname, w in weights.items():
+        r = streams @ w
+        test = r.index >= data.SPLIT
+        per_model = {}
+        for level in (0.95, 0.99):
+            v = mc.var_series(r, data.SPLIT, level)
+            tag = int(round(level * 100))
+            for model in v.columns:
+                br = (r[test] < -v.loc[test, model]).to_numpy()
+                per_model.setdefault(model, {}).update({
+                    f"breach{tag}": br.mean(), f"Kupiec p{tag}": mc.kupiec(br, 1 - level),
+                    f"Christoffersen p{tag}": mc.christoffersen(br)})
+            if pname == "SPY" and level == 0.99:
+                spy = {"r": r[test], "var": v[test]}
+        rows += [{"portfolio": pname, "model": m, **vals} for m, vals in per_model.items()]
+    table = pd.DataFrame(rows)
+
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(11, 8.5), gridspec_kw={"height_ratios": [1.6, 1]})
+    r, v = spy["r"], spy["var"]
+    a1.plot(r.index, r * 100, color=MUTED, linewidth=0.6, label="SPY daily return")
+    for model, c in (("Static historical", SERIES[1]), ("EWMA filtered historical", SERIES[3])):  # = bar colours
+        a1.plot(v.index, -v[model] * 100, color=c, linewidth=1.3, label=f"−VaR99, {model}")
+        hit = r < -v[model]
+        a1.scatter(r.index[hit], r[hit] * 100, s=14, color=c, zorder=3)
+    a1.set_ylabel("Daily return (%)")
+    a1.set_title("M9 · SPY 2019–2026: a static VaR99 stands still, an EWMA-filtered one moves with volatility",
+                 loc="left")
+    a1.legend(loc="lower left", fontsize=8)
+    models = list(table["model"].unique())
+    x = np.arange(len(weights))
+    for i, (model, c) in enumerate(zip(models, SERIES)):
+        vals = table[table["model"] == model].set_index("portfolio").loc[list(weights), "breach99"].to_numpy()
+        a2.bar(x + (i - 1.5) * 0.2, vals, width=0.19, color=c, label=model)
+    a2.axhline(0.01, color=INK2, linestyle="--", linewidth=1)
+    a2.text(x[-1] + 0.45, 0.01, "target 1%", color=INK2, fontsize=8, va="bottom", ha="right")
+    a2.set_xticks(x, list(weights))
+    a2.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=1))
+    a2.set_ylabel("Share of test days breaching VaR99")
+    a2.legend(loc="upper right", fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(FIG / "m9_var_backtest.png", dpi=150)
+    plt.close(fig)
+
+    pct = [c for c in table.columns if c.startswith("breach")]
+    (FIG / "m9_var_backtest.md").write_text(to_markdown(table, pct=pct, digits=3))
+    return table
+
+
 if __name__ == "__main__":
     FIG.mkdir(exist_ok=True)
     prices = data.load_prices()
+    rf = data.load_rf(prices.index)
     pd.set_option("display.width", 200)
-    tables = {}
+    tables, results = {}, {}
     for step in (m1, m2, m3, m4):
         print(f"\n== {step.__name__} ==")
-        tables[step.__name__] = step(prices)
+        out = step(prices)
+        tables[step.__name__], res = out if isinstance(out, tuple) else (out, {})
+        results |= res
         print(tables[step.__name__].round(3).to_string(index=False))
 
     # One-table verdict: every strategy's out-of-sample (2019+) net result, in the README's order.
-    keep = ["Buy & hold SPY", "Equal-weight 48", "XS momentum 12-1", "MA 50/200 on SPY", "Pairs portfolio (5)",
-            "Max-Sharpe (train fit)", "Walk-forward max-Sharpe", "Equal-weight 4"]
     test = pd.concat([tables[k] for k in ("m1", "m2", "m3")])
-    summary = test[(test["period"] == "test") & test["strategy"].isin(keep)].drop_duplicates("strategy")
-    summary = summary.set_index("strategy").loc[keep].reset_index()
+    summary = test[(test["period"] == "test") & test["strategy"].isin(VERDICT)].drop_duplicates("strategy")
+    summary = summary.set_index("strategy").loc[VERDICT].reset_index()
     cols = ["strategy", "Sharpe (net)", "CAGR (net)", "vol", "maxDD", "turnover/yr"]
     (FIG / "summary.md").write_text(to_markdown(summary[cols]))
     print("\n== summary (test, net) ==\n", summary[cols].round(3).to_string(index=False))
+
+    print("\n== m8 ==\n", m8(results, rf).round(3).to_string(index=False))
+    print("\n== m9 ==\n", m9(prices).round(3).to_string(index=False))

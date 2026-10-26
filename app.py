@@ -16,7 +16,7 @@ import frontier
 import momentum
 import montecarlo as mc
 import pairs
-from run import COST_BPS, MUTED, SERIES, metrics_table, sector_streams, strategy_streams
+from run import COST_BPS, MUTED, SERIES, excess, metrics_table, sector_streams, strategy_streams
 
 st.set_page_config(page_title="Quant Portfolio Lab", layout="wide")
 SPLIT = pd.Timestamp(data.SPLIT)
@@ -26,6 +26,11 @@ PCT_COLS = ("CAGR (net)", "vol", "maxDD")
 @st.cache_data
 def load_prices():
     return data.load_prices()
+
+
+@st.cache_data
+def load_rf():
+    return data.load_rf(load_prices().index)
 
 
 @st.cache_data
@@ -67,6 +72,7 @@ def equity_curves(results: dict, key: str = "net") -> dict:
 
 
 prices = load_prices()
+rf = load_rf()
 stocks = [t for t in prices.columns if t not in data.BENCHMARKS]
 
 st.title("Quant Portfolio Lab")
@@ -83,12 +89,19 @@ tabs = st.tabs(["Verdict", "M1 · Momentum", "M2 · Pairs", "M3 · Frontier", "M
 
 # ---------------------------------------------------------------- Verdict
 with tabs[0]:
-    st.subheader("Out-of-sample verdict (research defaults, test 2019+, net of 10 bps)")
-    st.markdown((Path(__file__).parent / "figures" / "summary.md").read_text())
+    st.subheader("Out-of-sample verdict (research defaults, test 2019+, net of 10 bps, Sharpe over T-bills)")
+    summary = Path(__file__).parent / "figures" / "summary.md"
+    if summary.exists():
+        st.markdown(summary.read_text())
+    else:
+        st.info("Verdict table not generated yet: run `python run.py` once. The other tabs work without it.")
     st.markdown("**No strategy beat a passive benchmark out of sample.** Momentum didn't beat equal-weighting its own "
                 "universe; the pairs screen found chance-level cointegration that vanished after 2018; the optimizer "
-                "lost to a naive 25%-each mix on Sharpe (but cut drawdown by two thirds); and both risk models "
-                "under-predicted post-2018 tail losses. Use the tabs to see how sensitive each result is.")
+                "lost to a naive 25%-each mix on Sharpe (but cut SPY's drawdown by two thirds); and static risk "
+                "models under-predicted post-2018 tail losses. **None of these Sharpe gaps is statistically "
+                "significant** (every 95% interval spans about ±0.7), and an EWMA-filtered VaR passes the backtest "
+                "the static ones fail. See the README's M8 and M9 sections. Use the tabs to see how sensitive "
+                "each result is.")
 
 # ---------------------------------------------------------------- M1
 with tabs[1]:
@@ -106,9 +119,9 @@ with tabs[1]:
             "Equal-weight 48": momentum.equal_weight(prices, stocks),
             "Buy & hold SPY": momentum.buy_and_hold(prices, "SPY"),
         }
-        res = {k: backtest.run(w, prices, cost) for k, w in strategies.items()}
+        res = {k: backtest.run(w, prices, cost, rf) for k, w in strategies.items()}
         st.altair_chart(line_chart(equity_curves(res), "Growth of $1 (log, net)", log=True), width="stretch")
-        show_table(metrics_table(res))
+        show_table(metrics_table(res, rf))
 
 # ---------------------------------------------------------------- M2
 with tabs[2]:
@@ -153,14 +166,14 @@ with tabs[2]:
         st.altair_chart((zline + rules_chart + split_rule).properties(height=300).interactive(bind_y=False),
                         width="stretch")
 
-    res = {"Pairs portfolio": backtest.run(pairs.portfolio(prices, chosen, **rules), prices, cost)}
-    res |= {lab: backtest.run(pairs.pair_weights(prices, r.a, r.b, r.beta, **rules), prices, cost)
+    res = {"Pairs portfolio": backtest.run(pairs.portfolio(prices, chosen, **rules), prices, cost, rf)}
+    res |= {lab: backtest.run(pairs.pair_weights(prices, r.a, r.b, r.beta, **rules), prices, cost, rf)
             for lab, r in zip(labels, chosen.itertuples())}
     curves = {"Portfolio (net)": (1 + res["Pairs portfolio"]["net"]).cumprod(),
               "Portfolio (gross)": (1 + res["Pairs portfolio"]["gross"]).cumprod(),
               f"{pick} (net)": (1 + res[pick]["net"]).cumprod()}
     st.altair_chart(line_chart(curves, "Growth of $1"), width="stretch")
-    show_table(metrics_table(res))
+    show_table(metrics_table(res, rf))
     test_px = data.split(prices)[1]
     test_p = [pairs.coint_pvalue(test_px[r.a], test_px[r.b]) for r in chosen.itertuples()]
     st.caption("Test-period cointegration p-values of the selected pairs: "
@@ -171,7 +184,7 @@ with tabs[3]:
     c1, c2 = st.columns([2, 1])
     universe = c1.radio("Universe", ["Strategies + SPY + BND", "8 sector baskets + BND"], horizontal=True)
     rets = streams(cost) if universe.startswith("Strategies") else sector_streams(prices)
-    train_r = data.split(rets)[0]
+    train_r = data.split(excess(rets, rf))[0]  # optimize on returns over T-bills
     cap = c2.slider("Max weight per asset", round(1 / rets.shape[1] + 0.005, 2), 1.0, 0.4, 0.05)
     mu, cov = frontier.annualize(train_r)
     ms_w, mv_w = frontier.max_sharpe(mu, cov, cap), frontier.min_variance(mu, cov, cap)
@@ -186,7 +199,7 @@ with tabs[3]:
     with left:
         base = alt.Chart(cloud).mark_circle(size=6, opacity=0.5).encode(
             x=alt.X("vol:Q", title="Volatility (train, annualized)", axis=alt.Axis(format="%")),
-            y=alt.Y("ret:Q", title="Expected return (train, annualized)", axis=alt.Axis(format="%")),
+            y=alt.Y("ret:Q", title="Expected excess return over T-bills (train)", axis=alt.Axis(format="%")),
             color=alt.Color("sharpe:Q", scale=alt.Scale(range=["#184f95", "#9ec5f4"]), title="Sharpe"))
         fl = alt.Chart(front).mark_line(color="#ffffff", strokeWidth=2).encode(x="vol:Q", y="ret:Q")
         pt = alt.Chart(pts).mark_point(size=160, filled=True, strokeWidth=0).encode(
@@ -208,15 +221,15 @@ with tabs[3]:
     if universe.startswith("Strategies"):
         equity = (1 + rets).cumprod()
         const = lambda w: pd.DataFrame([w.to_numpy()] * len(rets), index=rets.index, columns=rets.columns)
-        wf = frontier.walk_forward(rets, cap=cap)
+        wf = frontier.walk_forward(excess(rets, rf), cap=cap)
         live0 = wf.sum(axis=1).gt(0).idxmax()
         allocs = {"Max-Sharpe (train fit)": const(ms_w), "Walk-forward max-Sharpe": wf,
                   "Equal-weight 4": const(pd.Series(0.25, index=rets.columns)),
                   "SPY": const(pd.Series([0, 0, 1, 0], index=rets.columns, dtype=float))}
-        res = {k: backtest.run(w, equity, cost).loc[live0:] for k, w in allocs.items()}
+        res = {k: backtest.run(w, equity, cost, rf).loc[live0:] for k, w in allocs.items()}
         st.altair_chart(line_chart({k: (1 + data.split(v)[1]["net"]).cumprod() for k, v in res.items()},
                                    "Growth of $1 (test only, net)", split=False), width="stretch")
-        show_table(metrics_table(res))
+        show_table(metrics_table(res, rf))
 
 # ---------------------------------------------------------------- M4
 with tabs[4]:
@@ -226,7 +239,7 @@ with tabs[4]:
     years = c3.slider("Horizon (years)", 1, 10, mc.YEARS)
     block = c4.slider("Bootstrap block (days)", 1, 126, mc.BLOCK)
     train_s, test_s = data.split(streams(cost))
-    w = {"Max-Sharpe (M3)": frontier.max_sharpe(*frontier.annualize(train_s)),
+    w = {"Max-Sharpe (M3)": frontier.max_sharpe(*frontier.annualize(excess(train_s, rf))),
          "Equal-weight 4": pd.Series(0.25, index=train_s.columns),
          "SPY": pd.Series([0, 0, 1, 0], index=train_s.columns, dtype=float)}[pname]
     r_train, r_test = train_s @ w, test_s @ w

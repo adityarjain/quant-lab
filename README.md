@@ -1,61 +1,66 @@
 # Quant Portfolio Lab
 
-*Momentum, pairs trading, mean-variance optimization and Monte Carlo risk on US large caps, 2010–2026, with a strict train/test split.*
+[![tests](https://github.com/adityarjain/quant-portfolio-lab/actions/workflows/tests.yml/badge.svg)](https://github.com/adityarjain/quant-portfolio-lab/actions/workflows/tests.yml)
+
+*Momentum, pairs trading, mean-variance optimization and Monte Carlo risk on US large caps, 2010–2026, with a strict train/test split, T-bill excess returns, significance tests and backtested VaR.*
 
 ## Abstract
-We build two classic anomaly strategies, combine them with mean-variance optimization, and stress-test the result with Monte Carlo. Everything is fit on 2010–2018 and evaluated once on 2019–2026, net of 10 bps per unit of turnover. **No strategy beat a passive benchmark out of sample.** Cross-sectional 12-1 momentum earned a net Sharpe of 0.87 against 0.95 for an equal-weight portfolio of the same 48 stocks. The pairs screen found 6 cointegrated pairs out of 120, exactly the number chance predicts, and none stayed cointegrated after 2018 (test Sharpe 0.27). Mean-variance optimization put 0% in momentum, let a hand-set 40% weight cap decide the allocation, and lost to a naive 25%-each mix (0.85 vs 0.97), as DeMiguel et al. (2009) predict. Its real effect was lower risk: a −11.6% max drawdown vs −33.7% for SPY. Finally, a block bootstrap captured fat daily tails that a normal model misses (about 50% higher CVaR99). But both risk models, fit on the calm 2011–2018 period, failed their out-of-sample VaR backtest, with 99% VaR breached 2–6x too often, because volatility rose 30–90% after 2018. The main lesson is about process: each of these methods produced convincing in-sample numbers, and only the out-of-sample split exposed them.
+We build two classic anomaly strategies, combine them with mean-variance optimization, and stress-test the result. Everything is fit on 2010–2018 and evaluated once on 2019–2026, net of 10 bps per unit of turnover, with Sharpe ratios measured in excess of 3-month T-bills. **No strategy beat a passive benchmark out of sample.** Cross-sectional 12-1 momentum earned a net Sharpe of 0.74 against 0.80 for an equal-weight portfolio of the same 48 stocks. The pairs screen found 6 cointegrated pairs out of 120, exactly the number chance predicts, and none stayed cointegrated after 2018 (test Sharpe 0.17). Mean-variance optimization put 0% in momentum, let a hand-set 40% cap decide the allocation, and lost to a naive 25%-each mix (0.52 vs 0.76): the two streams it favoured, pairs and bonds, collapsed out of sample. **Significance tests then show that none of these comparisons is statistically distinguishable from luck**: every 95% Sharpe interval spans roughly ±0.7, and every head-to-head difference has p ≥ 0.17. On risk, a static normal or historical VaR fit on the calm 2011–2018 period broke 2–6x too often after 2018. Rescaling the historical tail by current EWMA volatility (filtered historical simulation) **passes the Kupiec coverage test for all three portfolios at both 95% and 99%**. The lesson is about process: in-sample numbers were convincing everywhere, and only an out-of-sample split, honest costs and formal inference exposed which ones were real.
 
 ## Hypothesis
 Momentum and pairs trading are among the most documented anomalies in equities. We test whether they survive realistic transaction costs **out-of-sample**, and whether combining them with mean-variance optimization improves risk-adjusted returns and tail risk versus any single strategy or buy-and-hold.
 
-## Verdict (test period 2019-01-02 → 2026-10-06, net of costs)
+## Verdict (test period 2019-01-02 → 2026-10-06, net of costs, Sharpe over T-bills)
 | strategy | Sharpe (net) | CAGR (net) | vol | maxDD | turnover/yr |
 |---|---|---|---|---|---|
-| Buy & hold SPY | 0.94 | 17.6% | 19.2% | -33.7% | 0.00 |
-| Equal-weight 48 | 0.95 | 16.8% | 18.1% | -36.2% | 0.00 |
-| XS momentum 12-1 | 0.87 | 18.1% | 22.1% | -30.3% | 5.40 |
-| MA 50/200 on SPY | 0.73 | 11.0% | 16.1% | -33.7% | 0.90 |
-| Pairs portfolio (5) | 0.27 | 1.4% | 5.7% | -12.6% | 9.27 |
-| Max-Sharpe (train fit) | 0.85 | 4.8% | 5.7% | -11.6% | 0.00 |
-| Walk-forward max-Sharpe | 0.83 | 6.7% | 8.2% | -11.2% | 0.91 |
-| Equal-weight 4 | 0.97 | 10.0% | 10.4% | -17.9% | 0.00 |
+| Buy & hold SPY | 0.80 | 17.6% | 19.2% | -33.7% | 0.00 |
+| Equal-weight 48 | 0.80 | 16.8% | 18.1% | -36.2% | 0.00 |
+| XS momentum 12-1 | 0.74 | 18.1% | 22.1% | -30.3% | 5.40 |
+| MA 50/200 on SPY | 0.59 | 11.6% | 16.1% | -33.7% | 0.90 |
+| Pairs portfolio (5) | 0.17 | 3.6% | 5.7% | -10.6% | 9.27 |
+| Max-Sharpe (train fit) | 0.52 | 5.7% | 5.7% | -11.3% | 0.00 |
+| Walk-forward max-Sharpe | 0.65 | 8.6% | 9.1% | -12.1% | 0.88 |
+| Equal-weight 4 | 0.76 | 10.6% | 10.4% | -17.9% | 0.00 |
 
 | Hypothesis | Answer |
 |---|---|
 | Momentum survives costs out of sample | **Partly.** Costs are small (~0.03 Sharpe), but the signal doesn't beat its own equal-weight universe. |
-| Pairs trading survives costs out of sample | **No.** The cointegration found in train was chance-level and vanished; costs took 28–39% of what remained. |
-| Optimizing the combination beats naive mixing | **No** on Sharpe (0.85 vs 0.97). **Yes** on drawdown (−11.6% vs −17.9%), at the price of much lower return. |
-| Tail risk is captured by a normal model | **No.** The bootstrap shows ~50% fatter daily tails, but neither model anticipated the post-2018 regime. |
+| Pairs trading survives costs out of sample | **No.** The cointegration found in train was chance-level and vanished; costs took 29–48% of what remained. |
+| Optimizing the combination beats naive mixing | **No** on Sharpe (0.52 vs 0.76). **Yes** on drawdown (−11.3% vs −17.9%), at the price of much lower return. |
+| Any of these Sharpe differences is real | **Not shown.** With 7.8 years of test data, no difference is significant (p = 0.17–0.89, M8). |
+| Tail risk is captured by a static model | **No.** Every static VaR fails its backtest (M4, M9). |
+| A volatility-adjusted VaR fixes that | **Yes.** EWMA-filtered historical VaR passes Kupiec at 95% and 99% for all three portfolios (M9). |
 
-Generated by `run.py` as `figures/summary.md`. Sharpe uses $r_f = 0$ (see Limitations).
+Generated by `run.py` as `figures/summary.md`.
 
 ## Data
 | | |
 |---|---|
 | Source | Yahoo Finance via `yfinance`, adjusted close (splits + dividends) |
 | Universe | 48 US large caps (8 sectors × 6) + SPY (equity benchmark) + BND (bonds) |
-| Period | 2010-01-04 → 2026-10-06 (download date recorded in `data/meta.json`) |
+| Risk-free | 3-month T-bill (FRED `DTB3`), forward-filled to trading days, ÷ 252 per day. Averaged 0.40% p.a. in train, 2.75% in test (peak 5.36%, Oct 2023) |
+| Period | 2010-01-04 → 2026-10-06 (download dates in `data/meta.json`, `data/meta_rf.json`) |
 | Train | 2010-01-04 → 2018-12-31 (2,264 days): all parameters, pair selection, hedge ratios and optimizer weights fit here |
 | Test | 2019-01-02 → 2026-10-06 (1,951 days): evaluated once, never tuned on |
 
 **Cleaning.** Gaps of at most 2 trading days are forward-filled (never back-filled, so no future prices leak in); any ticker with a longer gap or missing early history is dropped. All 50 tickers passed. Daily moves above 30% were checked by hand and are real events (OXY/EOG on the 2020-03-09 oil crash, ORCL on 2025-09-10).
 
-**Reproducibility.** Prices are cached in `data/prices.parquet` and committed, so results do not change when Yahoo revises history. `python data.py --refresh` re-downloads.
+**Reproducibility.** Prices and T-bill rates are cached in `data/prices.parquet` and `data/rf.parquet` and committed, so results do not change when the sources revise history. `python data.py --refresh` re-downloads prices.
 
 ## Method
 
 ### Backtest engine (`backtest.py`)
 Every strategy outputs target weights $w_{i,t}$ decided at the close of day $t$. The engine is the only place P&L is computed:
 
-$$r^{gross}_t = \sum_i w_{i,t-1}\, r_{i,t}, \qquad \tau_t = \sum_i |w_{i,t-1} - w_{i,t-2}|, \qquad r^{net}_t = r^{gross}_t - c\,\tau_t$$
+$$r^{gross}_t = \sum_i w_{i,t-1}\, r_{i,t} + \Big(1 - \sum_i \max(w_{i,t-1}, 0)\Big)\, r^f_t, \qquad \tau_t = \sum_i |w_{i,t-1} - w_{i,t-2}|, \qquad r^{net}_t = r^{gross}_t - c\,\tau_t$$
 
-with $c$ = 10 bps per unit of turnover. The one-day lag means no signal earns the return of the day it was computed on; `tests.py` proves this by feeding the engine a cheating signal ($\text{sign}(r_t)$, Sharpe > 10 if applied same-day) and asserting it earns nothing. Sharpe uses $r_f = 0$.
+with $c$ = 10 bps per unit of turnover. Capital not used to fund long positions earns the T-bill rate $r^f_t$ (the yield known at the previous close); short-sale proceeds earn nothing, the conservative case. The one-day lag means no signal earns the return of the day it was computed on; `tests.py` proves this by feeding the engine a cheating signal ($\text{sign}(r_t)$, Sharpe > 10 if applied same-day) and asserting it earns nothing. Every Sharpe ratio is annualized on **excess** returns, $\sqrt{252}\,\overline{(r - r^f)} / \sigma(r - r^f)$.
 
 ### M1 · Momentum (`momentum.py`)
 Parameters are textbook defaults, **not tuned**, so there is nothing to overfit in train.
 
 - **Cross-sectional 12-1** (Jegadeesh & Titman, 1993). At each month end, score each of the 48 stocks by $\;p_{t-21}/p_{t-252} - 1$ (12-month return skipping the last month, which tends to reverse). Hold the top quintile (10 stocks) equal-weighted until the next month end. Long-only.
-- **Time-series 50/200 MA on SPY.** 100% SPY while $\text{SMA}_{50} > \text{SMA}_{200}$, else cash (0% return).
+- **Time-series 50/200 MA on SPY.** 100% SPY while $\text{SMA}_{50} > \text{SMA}_{200}$, else T-bills.
 - **Benchmarks.** Buy-and-hold SPY, and equal-weight across the same 48 stocks. The second one is the fair benchmark for cross-sectional momentum: same universe, so any difference is due to stock selection alone.
 
 ![M1 momentum](figures/m1_momentum.png)
@@ -67,7 +72,7 @@ Parameters are textbook defaults, **not tuned**, so there is nothing to overfit 
 2. **Select.** The 5 lowest p-values with $p < 0.05$ and $\beta > 0$.
 3. **Hedge ratio** from OLS on train, frozen for test: $\log A_t = \alpha + \beta \log B_t + \varepsilon_t$.
 4. **Signal.** Spread $s_t = \log A_t - \beta \log B_t$, rolling z-score $z_t = (s_t - \bar s_{60}) / \sigma_{60}$.
-5. **Rules.** Short the spread at $z > 2$, buy it at $z < -2$; exit when $z$ crosses back inside ±0.5; stop out at $|z| > 4$ and stay flat until $z$ returns inside ±0.5. Each pair has gross exposure 1 (long $\tfrac{1}{1+\beta}$ of one leg, short $\tfrac{\beta}{1+\beta}$ of the other); the portfolio splits capital equally across the 5 pairs.
+5. **Rules.** Short the spread at $z > 2$, buy it at $z < -2$; exit when $z$ crosses back inside ±0.5; stop out at $|z| > 4$ and stay flat until $z$ returns inside ±0.5. Each pair has gross exposure 1 (long $\tfrac{1}{1+\beta}$ of one leg, short $\tfrac{\beta}{1+\beta}$ of the other); the portfolio splits capital equally across the 5 pairs. Capital not funding the long leg earns T-bills.
 6. **Half-life.** From $\Delta s_t = k\, s_{t-1} + c$: $\;t_{1/2} = -\ln 2 / k$.
 
 Rules (2, 0.5, 4, 60-day window) are common textbook values, not tuned. Train results are in-sample by construction (pairs and β were chosen on that data); test is the honest number.
@@ -76,13 +81,13 @@ Rules (2, 0.5, 4, 60-day window) are common textbook values, not tuned. Train re
 ![M2 pairs walkthrough](figures/m2_pairs.png)
 
 ### M3 · Efficient frontier (`frontier.py`)
-Markowitz mean-variance with $\mu$ and $\Sigma$ annualized from daily train returns, $r_f = 0$:
+Markowitz mean-variance on daily train **excess** returns, so max Sharpe is the tangency portfolio against T-bills:
 
-$$\max_w \frac{w^\top \mu}{\sqrt{w^\top \Sigma w}} \quad\text{(max Sharpe)}, \qquad \min_w w^\top \Sigma w \;\text{ s.t. }\; w^\top\mu = r^\* \quad\text{(frontier)}$$
+$$\max_w \frac{w^\top \mu^{ex}}{\sqrt{w^\top \Sigma w}} \quad\text{(max Sharpe)}, \qquad \min_w w^\top \Sigma w \;\text{ s.t. }\; w^\top\mu^{ex} = r^\* \quad\text{(frontier)}$$
 
 $$\text{subject to}\quad \textstyle\sum_i w_i = 1,\quad 0 \le w_i \le 0.4$$
 
-Solved with `scipy.optimize.minimize` (SLSQP). The 40% cap stops the optimizer from putting everything in one asset. 10,000 random long-only portfolios (Dirichlet(1), same cap) show the feasible cloud; the frontier is its upper-left edge. The capital market line runs from the origin through the max-Sharpe point.
+Solved with `scipy.optimize.minimize` (SLSQP). The 40% cap stops the optimizer from putting everything in one asset. 10,000 random long-only portfolios (Dirichlet(1), same cap) show the feasible cloud; the frontier is its upper-left edge. The capital market line runs from the T-bill origin through the max-Sharpe point.
 
 Two universes:
 - **M3a · raw assets.** 8 equal-weight sector baskets + BND.
@@ -114,21 +119,56 @@ VaR is the loss exceeded on the worst $1-\alpha$ of days; CVaR (expected shortfa
 
 ![M4 Monte Carlo](figures/m4_montecarlo.png)
 
+### M8 · Is any of this significant? (`significance.py`)
+A Sharpe ratio estimated from 7.8 years of daily data has a standard error of roughly $\sqrt{1/7.8} \approx 0.36$, about the size of every gap in the verdict table. All inference is on daily net returns in excess of T-bills over the test period:
+
+- **Confidence intervals.** 5,000 moving-block bootstrap resamples (21-day blocks keep autocorrelation and volatility clustering); 95% percentile interval.
+- **Differences.** For "is A's Sharpe higher than B's?", both series are resampled on the *same* bootstrap dates, so their correlation is preserved (the approach recommended by Ledoit & Wolf, 2008). Two-sided p-value for $H_0$: equal Sharpe.
+- **Probabilistic Sharpe Ratio** (Bailey & López de Prado, 2012), using per-period $\widehat{SR}$, skew $\gamma_3$ and kurtosis $\gamma_4$:
+
+$$\text{PSR}(SR^\*) = \Phi\!\left(\frac{(\widehat{SR} - SR^\*)\sqrt{T-1}}{\sqrt{1 - \gamma_3 \widehat{SR} + \frac{\gamma_4 - 1}{4}\widehat{SR}^2}}\right)$$
+
+- **Deflated Sharpe Ratio** (Bailey & López de Prado, 2014): PSR against the Sharpe that the *best* of $N$ strategies would reach by luck if all were truly zero,
+
+$$SR_0 = \sqrt{\mathbb V[\widehat{SR}_k]}\,\Big((1-\gamma)\,\Phi^{-1}\big(1 - \tfrac1N\big) + \gamma\,\Phi^{-1}\big(1 - \tfrac{1}{Ne}\big)\Big), \qquad \gamma \approx 0.5772$$
+
+with $N = 8$, the strategies in the verdict table.
+
+![M8 Sharpe intervals](figures/m8_sharpe_ci.png)
+
+### M9 · VaR that adapts to volatility (`montecarlo.py`)
+M4's static models failed because volatility after 2018 was 30–90% higher than in train. M9 lets the VaR move with volatility, using the RiskMetrics EWMA forecast (λ = 0.94, the industry default, not tuned), which only uses returns up to the previous day:
+
+$$\sigma^2_t = \lambda\,\sigma^2_{t-1} + (1-\lambda)\,r^2_{t-1}$$
+
+Four 1-day VaR models, all with parameters from train:
+
+| model | VaR$_t$ |
+|---|---|
+| Static normal | $-(\hat\mu + \hat\sigma\,\Phi^{-1}(1-\alpha))$ |
+| Static historical | $-Q_{1-\alpha}(r^{train})$ |
+| EWMA normal | $-\sigma_t\,\Phi^{-1}(1-\alpha)$ |
+| EWMA filtered historical | $-\sigma_t\,Q_{1-\alpha}(r^{train}_s / \sigma_s)$, today's volatility × train's standardized tail shape (Hull & White, 1998) |
+
+Each is backtested on 2019–2026 with **Kupiec's** proportion-of-failures test (is the breach rate right?) and **Christoffersen's** independence test (do breaches cluster?). Both are likelihood-ratio tests, $\chi^2(1)$ under $H_0$; a p-value below 0.05 rejects the model.
+
+![M9 VaR backtest](figures/m9_var_backtest.png)
+
 ## Results
 
 ### M1 · Momentum (net of 10 bps, train 2010–2018, test 2019–2026)
 | strategy | period | Sharpe (gross) | Sharpe (net) | CAGR (net) | vol | maxDD | turnover/yr |
 |---|---|---|---|---|---|---|---|
-| XS momentum 12-1 | train | 0.54 | 0.51 | 6.8% | 15.3% | -21.1% | 5.23 |
-| XS momentum 12-1 | test | 0.89 | 0.87 | 18.1% | 22.1% | -30.3% | 5.40 |
-| MA 50/200 on SPY | train | 0.72 | 0.71 | 7.9% | 11.7% | -19.5% | 0.89 |
-| MA 50/200 on SPY | test | 0.74 | 0.73 | 11.0% | 16.1% | -33.7% | 0.90 |
-| Equal-weight 48 | train | 0.91 | 0.91 | 12.4% | 14.0% | -16.1% | 0.11 |
-| Equal-weight 48 | test | 0.95 | 0.95 | 16.8% | 18.1% | -36.2% | 0.00 |
-| Buy & hold SPY | train | 0.80 | 0.80 | 11.4% | 14.9% | -19.3% | 0.11 |
-| Buy & hold SPY | test | 0.94 | 0.94 | 17.6% | 19.2% | -33.7% | 0.00 |
+| XS momentum 12-1 | train | 0.52 | 0.48 | 6.9% | 15.3% | -21.1% | 5.23 |
+| XS momentum 12-1 | test | 0.77 | 0.74 | 18.1% | 22.1% | -30.3% | 5.40 |
+| MA 50/200 on SPY | train | 0.68 | 0.68 | 7.9% | 11.7% | -19.4% | 0.89 |
+| MA 50/200 on SPY | test | 0.59 | 0.59 | 11.6% | 16.1% | -33.7% | 0.90 |
+| Equal-weight 48 | train | 0.88 | 0.88 | 12.4% | 14.0% | -16.1% | 0.11 |
+| Equal-weight 48 | test | 0.80 | 0.80 | 16.8% | 18.1% | -36.2% | 0.00 |
+| Buy & hold SPY | train | 0.77 | 0.77 | 11.4% | 14.9% | -19.3% | 0.11 |
+| Buy & hold SPY | test | 0.80 | 0.80 | 17.6% | 19.2% | -33.7% | 0.00 |
 
-Turnover is one-way, in multiples of capital per year. Momentum's 2010 is in cash while the 12-month lookback warms up, which lowers its train CAGR slightly but not its Sharpe ranking.
+Turnover is one-way, in multiples of capital per year. Momentum's 2010 is in T-bills while the 12-month lookback warms up, which lowers its train CAGR slightly.
 
 ### M2 · Pairs scan (train)
 120 pairs tested; **6 cointegrated at 5%, which is exactly the number expected by chance alone** (120 × 0.05). Of the 40 pairs with return correlation above 0.7, **38 are not cointegrated**.
@@ -144,20 +184,20 @@ Turnover is one-way, in multiples of capital per year. Momentum's 2010 is in cas
 ### M2 · Pairs backtest (net of 10 bps)
 | strategy | period | Sharpe (gross) | Sharpe (net) | CAGR (net) | vol | maxDD | turnover/yr |
 |---|---|---|---|---|---|---|---|
-| Pairs portfolio (5) | train | 0.97 | 0.70 | 2.3% | 3.3% | -3.2% | 8.95 |
-| Pairs portfolio (5) | test | 0.44 | 0.27 | 1.4% | 5.7% | -12.6% | 9.27 |
-| C/GS | train | 0.52 | 0.37 | 2.1% | 5.9% | -16.5% | 8.90 |
-| C/GS | test | 0.75 | 0.60 | 3.6% | 6.3% | -11.7% | 9.82 |
-| C/MS | train | 0.47 | 0.32 | 1.9% | 6.5% | -13.1% | 9.46 |
-| C/MS | test | 0.31 | 0.21 | 1.6% | 9.5% | -19.3% | 9.04 |
-| KO/COST | train | 0.44 | 0.29 | 1.7% | 6.4% | -11.3% | 9.24 |
-| KO/COST | test | 0.40 | 0.27 | 1.8% | 7.9% | -13.9% | 9.95 |
-| MSFT/INTC | train | 0.47 | 0.36 | 2.6% | 8.0% | -14.2% | 9.35 |
-| MSFT/INTC | test | -0.13 | -0.17 | -5.4% | 20.1% | -66.9% | 8.78 |
-| LOW/NKE | train | 0.43 | 0.33 | 2.4% | 8.0% | -13.8% | 7.79 |
-| LOW/NKE | test | 0.39 | 0.31 | 2.8% | 10.8% | -30.1% | 8.78 |
+| Pairs portfolio (5) | train | 0.94 | 0.67 | 2.6% | 3.3% | -3.1% | 8.95 |
+| Pairs portfolio (5) | test | 0.33 | 0.17 | 3.6% | 5.7% | -10.6% | 9.27 |
+| C/GS | train | 0.51 | 0.36 | 2.4% | 5.9% | -15.5% | 8.90 |
+| C/GS | test | 0.67 | 0.51 | 5.9% | 6.3% | -11.7% | 9.82 |
+| C/MS | train | 0.45 | 0.31 | 2.2% | 6.5% | -12.1% | 9.46 |
+| C/MS | test | 0.25 | 0.15 | 3.8% | 9.5% | -19.3% | 9.04 |
+| KO/COST | train | 0.42 | 0.27 | 2.0% | 6.4% | -11.2% | 9.24 |
+| KO/COST | test | 0.32 | 0.19 | 4.0% | 7.9% | -10.9% | 9.95 |
+| MSFT/INTC | train | 0.46 | 0.34 | 2.9% | 8.0% | -13.1% | 9.35 |
+| MSFT/INTC | test | -0.16 | -0.21 | -3.4% | 20.1% | -66.2% | 8.78 |
+| LOW/NKE | train | 0.42 | 0.32 | 2.7% | 8.0% | -13.8% | 7.79 |
+| LOW/NKE | test | 0.34 | 0.26 | 5.1% | 10.8% | -25.9% | 8.78 |
 
-Returns are on gross capital; the strategy is flat much of the time, so CAGR is small even when Sharpe is decent.
+CAGR includes T-bill interest on idle capital; the strategy is flat much of the time, so most of its CAGR in the test period is that interest.
 
 ### M3 · Train correlations of the building blocks
 | | Momentum | Pairs | SPY | BND |
@@ -167,28 +207,35 @@ Returns are on gross capital; the strategy is flat much of the time, so CAGR is 
 | SPY | 0.90 | 0.06 | 1.00 | -0.30 |
 | BND | -0.26 | -0.00 | -0.30 | 1.00 |
 
-Train-fitted weights (max Sharpe and min variance came out **identical**): Momentum 0%, Pairs 40%, SPY 20%, BND 40%. In-sample Sharpe 1.40.
+Train-fitted weights (max Sharpe and min variance came out **identical**): Momentum 0%, Pairs 40%, SPY 20%, BND 40%. In-sample Sharpe 1.31.
+
+| building block | excess Sharpe, train | excess Sharpe, test |
+|---|---|---|
+| Momentum | 0.52 | 0.74 |
+| Pairs | 0.77 | 0.17 |
+| SPY | 0.76 | 0.80 |
+| BND | 0.71 | **-0.18** |
 
 ### M3 · Allocation out of sample (net, from April 2014; test = 2019–2026)
 | strategy | period | Sharpe (gross) | Sharpe (net) | CAGR (net) | vol | maxDD | turnover/yr |
 |---|---|---|---|---|---|---|---|
-| Max-Sharpe (train fit) | train | 1.10 | 1.10 | 3.3% | 3.0% | -3.8% | 0.00 |
-| Max-Sharpe (train fit) | test | 0.85 | 0.85 | 4.8% | 5.7% | -11.6% | 0.00 |
-| Walk-forward max-Sharpe | train | 0.78 | 0.77 | 2.7% | 3.5% | -7.4% | 0.33 |
-| Walk-forward max-Sharpe | test | 0.84 | 0.83 | 6.7% | 8.2% | -11.2% | 0.91 |
-| Equal-weight 4 | train | 0.74 | 0.74 | 5.0% | 7.0% | -10.0% | 0.00 |
-| Equal-weight 4 | test | 0.97 | 0.97 | 10.0% | 10.4% | -17.9% | 0.00 |
-| SPY | train | 0.69 | 0.69 | 8.6% | 13.3% | -19.3% | 0.00 |
-| SPY | test | 0.94 | 0.94 | 17.6% | 19.2% | -33.7% | 0.00 |
+| Max-Sharpe (train fit) | train | 0.94 | 0.94 | 3.5% | 3.0% | -3.6% | 0.00 |
+| Max-Sharpe (train fit) | test | 0.52 | 0.52 | 5.7% | 5.7% | -11.3% | 0.00 |
+| Walk-forward max-Sharpe | train | 0.61 | 0.59 | 2.8% | 3.6% | -7.8% | 0.38 |
+| Walk-forward max-Sharpe | test | 0.66 | 0.65 | 8.6% | 9.1% | -12.1% | 0.88 |
+| Equal-weight 4 | train | 0.66 | 0.66 | 5.1% | 7.0% | -9.9% | 0.00 |
+| Equal-weight 4 | test | 0.76 | 0.76 | 10.6% | 10.4% | -17.9% | 0.00 |
+| SPY | train | 0.64 | 0.64 | 8.6% | 13.3% | -19.3% | 0.00 |
+| SPY | test | 0.80 | 0.80 | 17.6% | 19.2% | -33.7% | 0.00 |
 
 ### M4 · Simulated risk (models fit on train, 10,000 × 5-year paths)
 | portfolio | model | 1d VaR99 | 1d CVaR99 | 1m CVaR95 | 5y p5 | 5y p50 | 5y p95 | P(5y loss) | maxDD median | maxDD worst 5% |
 |---|---|---|---|---|---|---|---|---|---|---|
-| Max-Sharpe (M3) | Normal | 0.4% | 0.5% | 1.5% | 11.2% | 24.5% | 39.5% | 0.1% | -3.6% | -6.1% |
-| Max-Sharpe (M3) | Bootstrap | 0.5% | 0.7% | 1.4% | 12.8% | 24.8% | 37.8% | 0.0% | -3.6% | -5.7% |
+| Max-Sharpe (M3) | Normal | 0.4% | 0.5% | 1.5% | 12.0% | 25.4% | 40.4% | 0.0% | -3.6% | -6.0% |
+| Max-Sharpe (M3) | Bootstrap | 0.5% | 0.7% | 1.4% | 13.5% | 25.7% | 38.6% | 0.0% | -3.6% | -5.7% |
 | Max-Sharpe (M3) | **Realized (test)** | **0.8%** | **1.5%** | | | | | | | |
-| Equal-weight 4 | Normal | 1.1% | 1.2% | 3.8% | 4.3% | 36.1% | 77.5% | 2.9% | -10.4% | -18.2% |
-| Equal-weight 4 | Bootstrap | 1.3% | 1.8% | 3.7% | 9.4% | 36.7% | 68.3% | 1.2% | -9.2% | -15.7% |
+| Equal-weight 4 | Normal | 1.1% | 1.2% | 3.8% | 4.8% | 36.6% | 78.2% | 2.7% | -10.4% | -18.1% |
+| Equal-weight 4 | Bootstrap | 1.3% | 1.8% | 3.7% | 9.8% | 37.3% | 68.9% | 1.2% | -9.2% | -15.6% |
 | Equal-weight 4 | **Realized (test)** | **1.7%** | **2.8%** | | | | | | | |
 | SPY | Normal | 2.1% | 2.4% | 7.5% | 0.4% | 68.8% | 184.2% | 4.9% | -20.3% | -34.3% |
 | SPY | Bootstrap | 2.6% | 3.6% | 7.7% | 9.3% | 71.4% | 163.3% | 2.4% | -18.0% | -30.6% |
@@ -197,58 +244,103 @@ Train-fitted weights (max Sharpe and min variance came out **identical**): Momen
 ### M4 · VaR backtest: how often test-period losses broke the train-fit VaR
 | portfolio | model | VaR95 | breached (target 5%) | VaR99 | breached (target 1%) |
 |---|---|---|---|---|---|
-| Max-Sharpe (M3) | Normal | 0.31% | 11.4% | 0.45% | 6.3% |
-| Max-Sharpe (M3) | Bootstrap | 0.29% | 12.5% | 0.54% | 3.8% |
-| Equal-weight 4 | Normal | 0.74% | 7.7% | 1.06% | 3.4% |
-| Equal-weight 4 | Bootstrap | 0.76% | 7.4% | 1.32% | 1.8% |
-| SPY | Normal | 1.46% | 6.9% | 2.09% | 3.3% |
-| SPY | Bootstrap | 1.46% | 6.9% | 2.56% | 2.3% |
+| Max-Sharpe (M3) | Normal | 0.3% | 11.1% | 0.4% | 6.0% |
+| Max-Sharpe (M3) | Bootstrap | 0.3% | 12.2% | 0.5% | 3.7% |
+| Equal-weight 4 | Normal | 0.7% | 7.6% | 1.1% | 3.4% |
+| Equal-weight 4 | Bootstrap | 0.8% | 7.4% | 1.3% | 1.8% |
+| SPY | Normal | 1.5% | 6.9% | 2.1% | 3.3% |
+| SPY | Bootstrap | 1.5% | 6.9% | 2.6% | 2.3% |
+
+### M8 · Test-period Sharpe with 95% block-bootstrap intervals
+| strategy | Sharpe | 95% CI low | 95% CI high | PSR (SR > 0) | DSR (N = 8) |
+|---|---|---|---|---|---|
+| Buy & hold SPY | 0.80 | 0.10 | 1.52 | 0.99 | 0.91 |
+| Equal-weight 48 | 0.80 | 0.08 | 1.61 | 0.99 | 0.91 |
+| XS momentum 12-1 | 0.74 | 0.17 | 1.38 | 0.98 | 0.89 |
+| MA 50/200 on SPY | 0.59 | -0.05 | 1.36 | 0.95 | 0.78 |
+| Pairs portfolio (5) | 0.17 | -0.51 | 0.83 | 0.68 | 0.35 |
+| Max-Sharpe (train fit) | 0.52 | -0.17 | 1.30 | 0.92 | 0.72 |
+| Walk-forward max-Sharpe | 0.65 | 0.02 | 1.30 | 0.96 | 0.83 |
+| Equal-weight 4 | 0.76 | 0.11 | 1.49 | 0.98 | 0.89 |
+
+The Sharpe that the best of these 8 would reach by luck alone if all were truly zero: **0.31**.
+
+### M8 · The comparisons the project's conclusions rest on
+| comparison | ΔSharpe | 95% CI low | 95% CI high | p-value |
+|---|---|---|---|---|
+| Equal-weight 4 − Max-Sharpe (train fit) | 0.23 | -0.11 | 0.63 | 0.17 |
+| Walk-forward max-Sharpe − Max-Sharpe (train fit) | 0.12 | -0.41 | 0.58 | 0.64 |
+| XS momentum 12-1 − Equal-weight 48 | -0.06 | -0.54 | 0.35 | 0.79 |
+| Equal-weight 48 − Buy & hold SPY | 0.00 | -0.28 | 0.40 | 0.85 |
+| Buy & hold SPY − Equal-weight 4 | 0.04 | -0.22 | 0.25 | 0.89 |
+
+### M9 · Four VaR models backtested on 2019–2026 (Kupiec: breach rate; Christoffersen: clustering; p < 0.05 rejects)
+| portfolio | model | breach95 | Kupiec p95 | Christoffersen p95 | breach99 | Kupiec p99 | Christoffersen p99 |
+|---|---|---|---|---|---|---|---|
+| Max-Sharpe (M3) | Static normal | 11.1% | 0.000 | 0.005 | 6.0% | 0.000 | 0.000 |
+| Max-Sharpe (M3) | Static historical | 11.9% | 0.000 | 0.002 | 3.8% | 0.000 | 0.002 |
+| Max-Sharpe (M3) | EWMA normal | 4.6% | 0.368 | 0.974 | 2.1% | 0.000 | 0.055 |
+| Max-Sharpe (M3) | EWMA filtered historical | 5.3% | 0.507 | 0.803 | 1.1% | 0.738 | 0.019 |
+| Equal-weight 4 | Static normal | 7.6% | 0.000 | 0.009 | 3.4% | 0.000 | 0.000 |
+| Equal-weight 4 | Static historical | 7.3% | 0.000 | 0.021 | 1.8% | 0.002 | 0.000 |
+| Equal-weight 4 | EWMA normal | 5.4% | 0.444 | 0.562 | 1.9% | 0.000 | 0.041 |
+| Equal-weight 4 | EWMA filtered historical | 5.2% | 0.646 | 0.765 | 0.9% | 0.728 | 0.157 |
+| SPY | Static normal | 6.9% | 0.000 | 0.031 | 3.3% | 0.000 | 0.021 |
+| SPY | Static historical | 6.7% | 0.001 | 0.080 | 2.2% | 0.000 | 0.015 |
+| SPY | EWMA normal | 5.7% | 0.142 | 0.526 | 2.3% | 0.000 | 0.361 |
+| SPY | EWMA filtered historical | 5.6% | 0.243 | 0.432 | 1.0% | 0.907 | 0.178 |
 
 ## What failed
 
-**M1: momentum did not beat its own universe.** Cross-sectional momentum had a lower Sharpe than simply holding all 48 stocks equally, in both train (0.51 vs 0.91) and test (0.87 vs 0.95). It took on more volatility (22% vs 18% in test) without enough extra return to pay for it. Costs were *not* the reason: at about 5x annual turnover, 10 bps costs only about 0.03 Sharpe. The signal itself added little, which is consistent with momentum being a crowded, well-known anomaly, and with 48 mega-caps being too narrow a cross-section for ranking to matter much.
+**M1: momentum did not beat its own universe.** Cross-sectional momentum had a lower Sharpe than simply holding all 48 stocks equally, in both train (0.48 vs 0.88) and test (0.74 vs 0.80). It took on more volatility (22% vs 18% in test) without enough extra return to pay for it. Costs were *not* the reason: at about 5x annual turnover, 10 bps costs only about 0.03 Sharpe. The signal itself added little, which is consistent with momentum being a crowded, well-known anomaly, and with 48 mega-caps being too narrow a cross-section for ranking to matter much. (M8: the test-period gap of −0.06 is far from significant, p = 0.79.)
 
-**M1: trend-following cut returns more than risk.** The 50/200 MA rule had the lowest CAGR in both periods. In test it still suffered SPY's full −33.7% drawdown, because the 2020 crash was faster than a 200-day average can react, and then it sat in cash during the rebound. Its only benefit was lower volatility, from time spent in cash.
+**M1: trend-following cut returns more than risk.** The 50/200 MA rule had the lowest test CAGR (11.6%) and Sharpe (0.59) of M1's strategies. It still suffered SPY's full −33.7% drawdown, because the 2020 crash was faster than a 200-day average can react, and then it sat in T-bills during the rebound. Its only benefit was lower volatility, from time spent out of the market.
 
 **M2: the cointegration screen found nothing beyond chance.** 6 of 120 pairs passed at 5%, the same number a screen of pure noise would produce. Out of sample, **none of the 5 selected pairs was still cointegrated** (test p-values 0.27–0.85). The "statistical relationship" the strategy was built on did not exist in a form that persists.
 
-**M2: it still made a little money, for a different reason than intended.** The C/GS spread broke structurally after 2020 (it drifted from about −1.0 to −1.7; see the walkthrough figure), yet C/GS had the *best* test Sharpe. The 60-day rolling mean follows the drift, so the strategy is really trading short-term reversion around a moving average, not the long-run equilibrium it was selected for. Cointegration was the reason for picking these pairs, but it wasn't where the profit came from.
+**M2: it still made a little money, for a different reason than intended.** The C/GS spread broke structurally after 2020 (it drifted from about −1.0 to −1.7; see the walkthrough figure), yet C/GS had the *best* test Sharpe (0.51). The 60-day rolling mean follows the drift, so the strategy is really trading short-term reversion around a moving average, not the long-run equilibrium it was selected for. Cointegration was the reason for picking these pairs, but it wasn't where the profit came from.
 
-**M2: one broken pair dominates the risk.** MSFT/INTC lost 67% peak-to-trough in test, as Microsoft and Intel's fortunes split permanently. The ±4 stop exits a position, but the rule re-enters once the rolling z-score resets, so a trending spread is traded again and again. A rule that drops a pair whose rolling cointegration p-value fails would have helped. That rule wasn't added, because it would be designed after seeing the test result.
+**M2: one broken pair dominates the risk.** MSFT/INTC lost 66% peak-to-trough in test, as Microsoft and Intel's fortunes split permanently. The ±4 stop exits a position, but the rule re-enters once the rolling z-score resets, so a trending spread is traded again and again. A rule that drops a pair whose rolling cointegration p-value fails would have helped. That rule wasn't added, because it would be designed after seeing the test result.
 
-**M2: costs matter at this turnover.** About 9x annual turnover cut the portfolio's Sharpe by 28–39% (0.97 → 0.70 train, 0.44 → 0.27 test). Pairs are far more cost-sensitive than M1's momentum.
+**M2: costs matter at this turnover.** About 9x annual turnover cut the portfolio's Sharpe by 29–48% (0.94 → 0.67 train, 0.33 → 0.17 test). Pairs are far more cost-sensitive than M1's momentum. Over T-bills, the test-period portfolio earned about 1% a year, and its Sharpe interval comfortably includes zero (PSR 0.68, M8).
 
 **M3: the optimizer discarded momentum entirely.** With 0.90 correlation to SPY and a lower Sharpe in train, momentum added only risk, so the optimizer gave it 0%. This confirms M1: in this universe, momentum is mostly a noisier version of the market.
 
 **M3: the optimizer was driven by the constraints, not the estimates.** Max Sharpe and min variance landed on the *same* corner: 40% pairs, 40% BND, 20% SPY. Pairs and BND are the two lowest-volatility streams and are nearly uncorrelated with everything, so the optimizer pushed both to the 40% cap and gave the leftover 20% to SPY. The 40% cap, a number chosen by hand, determined the answer more than $\mu$ or $\Sigma$ did.
 
-**M3: optimization lost to 1/N out of sample.** The train-fit portfolio's in-sample Sharpe of 1.40 fell to 0.85 in test. The naive 25%-each mix scored **0.97**, and SPY alone 0.94. This is the result of DeMiguel, Garlappi & Uppal (2009): estimation error in $\mu$ is large enough that equal weights usually beat the "optimal" ones. The optimizer did deliver what it really optimizes for, low risk: max drawdown −11.6% vs −33.7% for SPY. But it gave up 13 points of annual return to get it.
+**M3: optimization lost to 1/N out of sample, because what looked safest broke.** The train-fit portfolio's in-sample Sharpe of 1.31 fell to 0.52 in test, against **0.76** for the naive 25%-each mix and 0.80 for SPY. The cause is visible in the building blocks: the two streams loaded to the cap collapsed, **BND from 0.71 to −0.18** (the 2022 rate shock, as T-bills rose to 5%) and pairs from 0.77 to 0.17. This is the estimation-error problem of DeMiguel, Garlappi & Uppal (2009): $\mu$ estimated from one regime is a poor guide to the next. The optimizer did deliver low risk (max drawdown −11.3% vs −33.7% for SPY), but gave up about 12 points of annual return to get it. (M8: the 0.23 Sharpe gap to 1/N is not significant, p = 0.17. The ranking matches the literature, but this sample alone can't prove it.)
 
-**M3: the "optimal" weights are unstable.** Re-fit quarterly on the trailing 3 years, momentum's weight swings between 0% and 40% and pairs between 7% and 40% (see the walk-forward panel). Momentum went to the cap in 2022–2025, right after its strong 2020–2021 run, which is chasing past performance. Walk-forward had a higher test CAGR than the frozen fit (6.7% vs 4.8%) but no better Sharpe.
+**M3: the "optimal" weights are unstable.** Re-fit quarterly on the trailing 3 years, every weight swings across its whole 0–40% range (see the walk-forward panel). Momentum sat at the cap through most of 2022–2025, right after its strong 2020–2021 run, which is chasing past performance. Walk-forward beat the frozen fit (Sharpe 0.65 vs 0.52, CAGR 8.6% vs 5.7%), but that gap is noise too (p = 0.64).
 
-**M4: the normal model understates daily tail risk, as expected.** Train daily returns have excess kurtosis of 4.8–6.4 (a normal distribution has 0). The bootstrap's 1-day CVaR99 is **about 50% larger** than the normal model's for SPY (3.6% vs 2.4%) and for equal-weight (1.8% vs 1.2%). Its 99% VaR is breached about half as often in test (1.8–3.8% of days vs 3.3–6.3%).
+**M4: the normal model understates daily tail risk, as expected.** Train daily returns have excess kurtosis of 4.8–6.4 (a normal distribution has 0). The bootstrap's 1-day CVaR99 is **about 50% larger** than the normal model's for SPY (3.6% vs 2.4%) and for equal-weight (1.8% vs 1.2%). Its 99% VaR is breached less often in test (1.8–3.7% of days vs 3.3–6.0%).
 
-**M4: but both models failed the VaR backtest.** Every model breached its 99% VaR 2–6x more often than the 1% target, and its 95% VaR 7–12% of days instead of 5%. Realized test CVaR99 was 1.4–3x what either model predicted. The cause is not the distribution's shape but **a regime change**: every building block was 30–90% more volatile in 2019–2026 (COVID, the 2022 rate shock) than in the calm 2011–2018 train period. Neither model can predict volatility it has never seen. The max-Sharpe portfolio fared worst (12.5% breaches at 95%), because the optimizer chose the streams that *looked* safest in train, pairs and BND, and their volatility nearly doubled.
+**M4: but both models failed the VaR backtest.** Every model breached its 99% VaR 2–6x more often than the 1% target, and its 95% VaR on 7–12% of days instead of 5%. Realized test CVaR99 was 1.4–3x what either model predicted. The cause is not the distribution's shape but **a regime change**: every building block was 30–90% more volatile in 2019–2026 (COVID, the 2022 rate shock) than in the calm 2011–2018 train period. A model with fixed volatility can't predict volatility it has never seen (M9 fixes this). The max-Sharpe portfolio fared worst (12.2% breaches at 95%), because the optimizer chose the streams that *looked* safest in train, pairs and BND, and their volatility nearly doubled.
 
 **M4: fat tails are a short-horizon effect here.** At 5 years the ranking flips. The normal model is *more* pessimistic (SPY: 4.9% chance of a 5-year loss vs 2.4% bootstrap; 5th-percentile return 0.4% vs 9.3%). Train returns partly reverse over weeks (the variance of 21-day returns is only 0.56–0.68x what i.i.d. scaling implies), so the bootstrap's chained blocks wander less than a random walk with the same daily volatility. "Bootstrap = more conservative" is true for days, not years.
 
 **M4: the bootstrap cannot imagine anything worse than history.** Its max-drawdown histogram spikes near −3.6% because most 5-year paths (60 blocks each) redraw the window around the worst train episode at least once. Resampling can rearrange the past but never exceed it, and the test period was worse than anything in the past.
 
+**M8: the evidence is far weaker than the point estimates suggest.** Every 95% Sharpe interval is about 1.4 wide and they all overlap; three of eight (MA 50/200, pairs, max-Sharpe) include zero. None of the five comparisons the conclusions above rest on is significant (p = 0.17–0.89). With N = 8 strategies, the best one would reach a Sharpe of 0.31 by luck alone. No strategy clears a Deflated Sharpe Ratio of 0.95, and the two highest (0.91) are the passive benchmarks, SPY and equal-weight 48. The directional findings (momentum ≈ market, optimizer ≤ 1/N, pairs ≈ 0) agree with the published literature, but 7.8 years of test data are not enough to establish any of them independently.
+
+**M9: a volatility-aware VaR fixes coverage; the tail shape still matters.** Both static models fail Kupiec for every portfolio at both levels (p ≤ 0.002 at 99%). Letting the volatility move (EWMA normal) fixes the 95% level (breaches 4.6–5.7%, Kupiec p ≥ 0.14) but still fails at 99% (1.9–2.3%, p = 0.000), because a normal tail is too thin. Combining today's volatility with the train period's standardized fat tail (**filtered historical simulation**) passes Kupiec at **both** levels for **all three** portfolios: 95% breaches 5.2–5.6% (p ≥ 0.24), 99% breaches 0.9–1.1% (p ≥ 0.73). It isn't perfect. For the max-Sharpe portfolio, its 99% breaches still cluster (Christoffersen p = 0.019), because an EWMA with λ = 0.94 takes a few days to catch up with a sudden shock like March 2020. That lag is visible in the figure.
+
 ## Limitations
 - **Survivorship bias.** The universe is today's large caps, chosen with hindsight; firms that failed or shrank since 2010 are absent. This flatters every long-only result.
-- **Multiple testing.** The pair screen runs 120 hypothesis tests at 5% without a Bonferroni/BH correction; the M2 results show why this matters.
-- **Shorting costs ignored.** Pairs' short legs pay no borrow fee and earn no rebate. For these mega-caps borrow is cheap, but not free.
+- **Multiple testing.** The pair screen runs 120 hypothesis tests at 5% without a Bonferroni/BH correction; the M2 results show why this matters. M8's Deflated Sharpe uses N = 8, the strategies in the verdict table, which understates the true number of choices made (120 pairs scanned, two momentum variants, several allocations), so the DSRs reported are, if anything, optimistic.
+- **Shorting costs.** Pairs' short legs pay no borrow fee, and short-sale proceeds earn no rebate. For these mega-caps borrow is cheap, but not free.
+- **Risk-free rate.** The 3-month T-bill yield (discount basis) is used as a daily rate ÷ 252; the gap to an investment-yield convention is a few basis points.
 - **Estimation error in M3.** $\mu$ is estimated from ~8 years of daily data; its standard error is of the same order as the differences between assets. The 40% cap is an arbitrary guard against that, and the results depend on it.
-- **Stationarity in M4.** Both risk models assume the train period's return distribution persists. A volatility model that updates (e.g., GARCH or EWMA-scaled bootstrap) would adapt to regime shifts; it is left as further work.
+- **Stationarity.** M4's models assume the train distribution persists. M9 relaxes this for volatility but still assumes the train period's *standardized* tail shape persists, with a fixed λ = 0.94.
 - **Engine simplification.** Target weights are held constant between signal changes (an implicit daily rebalance); turnover caused by price drift is not charged, so costs are slightly understated.
-- **Risk-free rate of zero.** All Sharpe ratios use $r_f = 0$. US T-bills averaged roughly 0–2% over 2011–2018 and considerably more over parts of 2019–2026, so absolute Sharpe ratios are overstated, most of all for the low-volatility pairs and max-Sharpe portfolios. Rankings between strategies with similar volatility are unaffected.
 - **One train/test split.** A single 2019 cutoff is one draw of history. Rolling or anchored walk-forward evaluation across many cutoffs would give a distribution of out-of-sample results rather than a point estimate.
 
 ## Further work
 Each item comes from a specific failure above. All of them would need to be fit on train data only, and none was added after seeing test results:
-- **Volatility-aware risk (M4).** Scale bootstrap draws by a current EWMA/GARCH volatility estimate (filtered historical simulation) so VaR adapts to regime changes.
+- **Factor attribution (M1, M3).** Regress each strategy on the Fama-French 5 factors plus momentum (free from Kenneth French's library) and report alpha with its t-statistic. This would turn "momentum is mostly the market" from a correlation into a regression.
 - **Pair monitoring (M2).** Drop a pair when its rolling cointegration p-value fails, rather than relying on z-score stops; correct the screen for multiple testing (Benjamini–Hochberg).
 - **Robust allocation (M3).** Shrink $\mu$ and $\Sigma$ (Ledoit–Wolf, Black–Litterman) or use risk parity, which needs no return forecast, and compare with 1/N.
+- **Better volatility models (M9).** GARCH(1,1) or a faster-reacting EWMA to reduce the clustering left in the max-Sharpe portfolio's 99% breaches.
+- **More test periods (M8).** Many walk-forward cutoffs would narrow the confidence intervals that currently make every comparison inconclusive.
 - **Broader momentum (M1).** A larger universe (S&P 500 constituents *as of each date*, which also removes survivorship bias) and a long-short version to separate the momentum premium from market beta.
 - **Market transfer.** Re-run on an Indian large-cap universe with that market's costs (STT, stamp duty), risk-free rate and short-selling constraints.
 
@@ -259,29 +351,38 @@ Each item comes from a specific failure above. All of them would need to be fit 
 - Markowitz, H. (1952). Portfolio selection. *Journal of Finance*, 7(1).
 - DeMiguel, V., Garlappi, L. & Uppal, R. (2009). Optimal versus naive diversification: how inefficient is the 1/N portfolio strategy? *Review of Financial Studies*, 22(5).
 - Künsch, H. (1989). The jackknife and the bootstrap for general stationary observations. *Annals of Statistics*, 17(3).
+- Ledoit, O. & Wolf, M. (2008). Robust performance hypothesis testing with the Sharpe ratio. *Journal of Empirical Finance*, 15(5).
+- Bailey, D. & López de Prado, M. (2012). The Sharpe ratio efficient frontier. *Journal of Risk*, 15(2).
+- Bailey, D. & López de Prado, M. (2014). The deflated Sharpe ratio: correcting for selection bias, backtest overfitting and non-normality. *Journal of Portfolio Management*, 40(5).
+- J.P. Morgan/Reuters (1996). *RiskMetrics — Technical Document*, 4th ed.
+- Hull, J. & White, A. (1998). Incorporating volatility updating into the historical simulation method for value-at-risk. *Journal of Risk*, 1(1).
+- Kupiec, P. (1995). Techniques for verifying the accuracy of risk measurement models. *Journal of Derivatives*, 3(2).
+- Christoffersen, P. (1998). Evaluating interval forecasts. *International Economic Review*, 39(4).
 
 ## Repository
 | file | role |
 |---|---|
-| `data.py` | universe, download + cache, cleaning, the fixed train/test split |
-| `backtest.py` | the only place P&L is computed: weights → lagged returns − costs; metrics |
+| `data.py` | universe, price and T-bill download + cache, cleaning, the fixed train/test split |
+| `backtest.py` | the only place P&L is computed: weights → lagged returns + interest on cash − costs; metrics |
 | `momentum.py` · `pairs.py` | strategies; each returns target weights only |
 | `frontier.py` | mean-variance optimizer, frontier, walk-forward re-fitting |
-| `montecarlo.py` | normal and block-bootstrap simulation, VaR/CVaR, drawdowns |
+| `montecarlo.py` | normal and block-bootstrap simulation, VaR/CVaR, drawdowns; EWMA/FHS VaR and Kupiec/Christoffersen tests |
+| `significance.py` | Sharpe confidence intervals, paired difference tests, PSR, Deflated Sharpe |
 | `run.py` | regenerates every figure and table in `figures/` |
 | `app.py` | interactive Streamlit dashboard over the same modules (UI only, no logic of its own) |
-| `tests.py` | one assert-based check per module (look-ahead, closed forms, synthetic data) + a headless dashboard check |
+| `tests.py` | one assert-based check per module (look-ahead, closed forms, synthetic data, test calibration) + a headless dashboard check |
+| `.github/workflows/tests.yml` | CI: runs `tests.py` on every push, and checks that `run.py` reproduces every table |
 
 ## Dashboard
 ```bash
 streamlit run app.py
 ```
-Five tabs (Verdict, M1–M4) recompute live from the tested modules, so every slider goes through the same engine, cost model and train/test split as the paper. It opens on the research defaults, and `tests.py` checks that those defaults reproduce the published test-period Sharpe ratios. You can vary transaction costs, momentum lookback and holding fraction, pairs window and thresholds, the optimizer's weight cap, and Monte Carlo paths, horizon and block length.
+Five tabs (Verdict, M1–M4) recompute live from the tested modules, so every slider goes through the same engine, cost model, T-bill rate and train/test split as the paper. It opens on the research defaults, and `tests.py` checks that those defaults reproduce the published test-period Sharpe ratios. You can vary transaction costs, momentum lookback and holding fraction, pairs window and thresholds, the optimizer's weight cap, and Monte Carlo paths, horizon and block length.
 
 Use it to see **how fragile each result is**, not to search for better parameters: any setting chosen after looking at the 2019+ numbers is fit on the test period and is no longer an out-of-sample result. The sidebar says so too.
 
 ## Reproduce
-Python 3.14; versions pinned in `requirements.txt`. Prices are read from the committed cache, so a clean clone reproduces every table in `figures/` byte-for-byte.
+Python 3.14; versions pinned in `requirements.txt`. Prices and T-bill rates are read from the committed caches, so a clean clone reproduces every table in `figures/` byte-for-byte; CI checks this on every push.
 ```bash
 python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 ```

@@ -1,0 +1,6 @@
+{
+  "downloaded": "2026-10-27",
+  "source": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DTB3&cosd=2009-12-01",
+  "series": "DTB3, 3-month T-bill secondary market rate, % p.a.",
+  "end": "2026-10-22"
+}

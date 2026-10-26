@@ -34,6 +34,18 @@ def test_backtest():
     hold = backtest.run(momentum.buy_and_hold(p, "S0"), p, cost_bps=0)["gross"]
     assert np.isclose((1 + hold).prod(), p["S0"].iloc[-1] / p["S0"].iloc[0])  # bought at day-0 close
 
+    # Risk-free rate: idle cash earns rf, fully invested capital doesn't, short proceeds earn nothing.
+    rf = pd.Series(0.0001, index=p.index)
+    flat = pd.DataFrame(0.0, index=p.index, columns=p.columns)
+    assert np.allclose(backtest.run(flat, p, 0, rf)["gross"], 0.0001)
+    full = backtest.run(momentum.buy_and_hold(p, "S0"), p, 0, rf)["gross"]
+    assert np.allclose(full.iloc[1:], hold.iloc[1:])  # 100% long: no cash, no interest
+    ls = flat.copy()
+    ls["S0"], ls["S1"] = 0.5, -0.5  # long/short: the unused half of capital earns rf
+    r_ls = backtest.run(ls, p, 0, rf)["gross"]
+    assert np.allclose(r_ls.iloc[2:], 0.5 * r.iloc[2:]["S0"] - 0.5 * r.iloc[2:]["S1"] + 0.5 * 0.0001)
+    assert np.isnan(backtest.sharpe(backtest.run(flat, p, 0, rf)["gross"], rf))  # cash has zero excess return
+
 
 def test_momentum():
     p = _random_prices(n_days=600, n_assets=10)
@@ -169,6 +181,64 @@ def test_data():
     assert train.index.max() < pd.Timestamp(data.SPLIT) <= test.index.min()
 
 
+def test_significance():
+    import significance as sig
+
+    rng = np.random.default_rng(data.SEED)
+    n = 2520  # 10 years
+    draw = lambda s: pd.Series(np.random.default_rng(s).normal(0.01 / np.sqrt(252), 0.01, n))  # true Sharpe 1.0
+    # A 95% interval must cover the truth in ~95% of samples (any single sample can miss).
+    cis = [sig.sharpe_ci(draw(s), n_boot=300, seed=s) for s in range(100)]
+    assert 0.88 <= np.mean([lo < 1.0 < hi for _, lo, hi in cis]) <= 1.0
+    assert 1.0 < np.mean([hi - lo for _, lo, hi in cis]) < 1.5  # theory: ±1.96·sqrt(1/10 years) ≈ ±0.62
+    ex = pd.Series(rng.normal(0.02 / np.sqrt(252), 0.01, n))  # true Sharpe 2.0
+
+    d, dlo, dhi, p = sig.sharpe_diff(ex, ex, n_boot=500)
+    assert d == 0 and dlo == dhi == 0 and p == 1.0  # a strategy is never different from itself
+    noise = pd.Series(rng.normal(0, 0.01, n))
+    # Sharpe 2 vs 0 over 10 years is ~4.5 standard errors apart: must be detected.
+    # (1 vs 0 is only ~2.2, which is exactly why short-sample Sharpe comparisons are weak.)
+    assert sig.sharpe_diff(ex, noise, n_boot=1000)[3] < 0.01
+
+    sr = ex.mean() / ex.std()
+    assert abs(sig.psr(ex, sr) - 0.5) < 1e-9  # benchmark = estimate -> coin flip
+    assert sig.psr(ex) > 0.99
+    trials = rng.normal(0, 0.03, 8)
+    assert sig.expected_max_sharpe(trials) > 0 and sig.dsr(ex, trials) < sig.psr(ex)  # deflating can only hurt
+    assert sig.expected_max_sharpe(rng.normal(0, 0.03, 100)) > sig.expected_max_sharpe(trials[:3])
+
+
+def test_var_backtest():
+    rng = np.random.default_rng(data.SEED)
+    # Kupiec: right breach rate -> no rejection; double the rate -> rejection.
+    exact = np.zeros(2000, bool)
+    exact[::20] = True  # exactly 5%
+    assert mc.kupiec(exact, 0.05) > 0.99 and mc.kupiec(np.r_[exact, np.ones(100, bool)], 0.05) < 0.01
+    # Christoffersen: breaches bunched together -> rejection; truly independent breaches are falsely
+    # rejected only ~5% of the time (a single random sequence can still land below 0.05).
+    bunched = np.zeros(2000, bool)
+    bunched[500:600] = True
+    assert mc.christoffersen(bunched) < 0.001
+    iid = [mc.christoffersen(np.random.default_rng(s).random(2000) < 0.05) for s in range(200)]
+    assert np.mean(np.array(iid) < 0.05) < 0.10
+
+    # Volatility doubles halfway: the static VaR breaks, the EWMA-filtered one adapts.
+    idx = pd.bdate_range("2000-01-03", periods=4000)
+    z = rng.standard_t(5, 4000) / np.sqrt(5 / 3)
+    r = pd.Series(z * np.where(np.arange(4000) < 2000, 0.01, 0.02), index=idx)
+    split = idx[2000]
+    v = mc.var_series(r, split, 0.95)
+    test = r.index >= split
+    rate = lambda col: float((r[test] < -v.loc[test, col]).mean())
+    assert rate("Static normal") > 0.12 and rate("Static historical") > 0.12
+    assert 0.03 < rate("EWMA filtered historical") < 0.08
+
+    # EWMA forecast for day t never sees day t or later.
+    r2 = r.copy()
+    r2.iloc[3000:] *= 10
+    assert np.allclose(mc.ewma_sigma(r).iloc[:3001].dropna(), mc.ewma_sigma(r2).iloc[:3001].dropna())
+
+
 def test_app():
     """Dashboard smoke test: runs headless, no errors, and its defaults reproduce the published
     test-period Sharpe ratios (so the UI can't silently drift from run.py)."""
@@ -177,9 +247,9 @@ def test_app():
     at = AppTest.from_file("app.py", default_timeout=300).run()
     assert not at.exception and not at.error, [e.value for e in at.exception]
     sharpe = lambda i, name: at.dataframe[i].value.query("period == 'test' and strategy == @name")["Sharpe (net)"].item()
-    assert round(sharpe(0, "XS momentum 12-1"), 2) == 0.87
-    assert round(sharpe(1, "Pairs portfolio"), 2) == 0.27
-    assert round(sharpe(3, "Equal-weight 4"), 2) == 0.97 and round(sharpe(3, "Max-Sharpe (train fit)"), 2) == 0.85
+    assert round(sharpe(0, "XS momentum 12-1"), 2) == 0.74
+    assert round(sharpe(1, "Pairs portfolio"), 2) == 0.17
+    assert round(sharpe(3, "Equal-weight 4"), 2) == 0.76 and round(sharpe(3, "Max-Sharpe (train fit)"), 2) == 0.52
 
     at.sidebar.slider[0].set_value(0).run()  # zero costs -> net == gross through the same engine
     assert not at.exception
