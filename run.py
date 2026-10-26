@@ -16,6 +16,7 @@ import momentum
 import montecarlo as mc
 import pairs
 import significance
+import walkforward
 
 FIG = Path(__file__).parent / "figures"
 COST_BPS = 10
@@ -650,6 +651,78 @@ def m12(prices: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
+WF_VERDICT = ["Buy & hold SPY", "Equal-weight 48", "XS momentum 12-1", "MA 50/200 on SPY", "Pairs portfolio (5)",
+              "Max-Sharpe (re-fit yearly)", "Equal-weight 4"]
+WF_COMPARISONS = [("Equal-weight 4", "Max-Sharpe (re-fit yearly)"), ("XS momentum 12-1", "Equal-weight 48"),
+                  ("Equal-weight 48", "Buy & hold SPY"), ("Buy & hold SPY", "Equal-weight 4")]
+
+
+def m13(prices: pd.DataFrame) -> pd.DataFrame:
+    """Re-run the design at 13 yearly cutoffs (2014–2026) and pool the out-of-sample years."""
+    rf = data.load_rf(prices.index)
+    oos, fits = walkforward.yearly(prices, rf, COST_BPS)
+    ex = {k: excess(oos[k], rf) for k in WF_VERDICT}
+    years = sorted(set(oos["Buy & hold SPY"].index.year))
+    yr = lambda s, y: float((1 + s[s.index.year == y]).prod() - 1)
+    by_year = pd.DataFrame({k: [yr(oos[k], y) for y in years] for k in WF_VERDICT}, index=years)
+    by_year["T-bills"] = [yr(rf.reindex(oos["Buy & hold SPY"].index), y) for y in years]
+
+    rows, recent = [], {}
+    for k, e in ex.items():
+        s_all, lo_all, hi_all = significance.sharpe_ci(e, seed=data.SEED)
+        recent[k] = significance.sharpe_ci(e[e.index >= data.SPLIT], seed=data.SEED)
+        rows.append({"strategy": k, "Sharpe 2014–2026": s_all, "95% CI low": lo_all, "95% CI high": hi_all,
+                     "CI width": hi_all - lo_all, "CI width 2019–2026 only": recent[k][2] - recent[k][1],
+                     "years beating SPY": "–" if k == "Buy & hold SPY"
+                     else f"{int((by_year[k] > by_year['Buy & hold SPY']).sum())}/{len(years)}",
+                     "worst year": by_year[k].min(), "best year": by_year[k].max()})
+    table = pd.DataFrame(rows)
+    diffs = pd.DataFrame([dict(zip(("comparison", "ΔSharpe", "95% CI low", "95% CI high", "p-value"),
+                                   (f"{a} − {b}", *significance.sharpe_diff(ex[a], ex[b], seed=data.SEED))))
+                          for a, b in WF_COMPARISONS])
+
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(11, 10), gridspec_kw={"height_ratios": [1.15, 1]})
+    show = ["Buy & hold SPY", "XS momentum 12-1", "Max-Sharpe (re-fit yearly)", "Equal-weight 4"]
+    x = np.arange(len(years))
+    for i, (k, c) in enumerate(zip(show, SERIES)):
+        a1.bar(x + (i - 1.5) * 0.2, by_year[k], width=0.19, color=c, label=k)
+    a1.axhline(0, color=MUTED, linewidth=1)
+    a1.set_xticks(x, [str(y) if y != years[-1] else f"{y}*" for y in years])
+    a1.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+    a1.set_ylabel("Calendar-year net return")
+    a1.set_title("M13 · Each year out of sample, with everything re-fit on the years before it", loc="left")
+    a1.legend(loc="upper left", fontsize=8, ncol=2)
+    a1.text(1, -0.12, "* 2026 to Oct 6", transform=a1.transAxes, ha="right", fontsize=8, color=MUTED)
+    y = np.arange(len(table))[::-1]
+    for yi, (_, r) in zip(y, table.iterrows()):
+        _, lo, hi = recent[r["strategy"]]
+        a2.hlines(yi - 0.17, lo, hi, color=MUTED, linewidth=2.2)
+        a2.hlines(yi + 0.17, r["95% CI low"], r["95% CI high"], color=INK, linewidth=2.2)
+        a2.scatter([r["Sharpe 2014–2026"]], [yi + 0.17], s=50, color=INK, edgecolor=SURFACE, linewidth=1.5,
+                   zorder=3)
+    a2.plot([], [], color=INK, linewidth=2.2, label="2014–2026, 12.8 years (M13)")
+    a2.plot([], [], color=MUTED, linewidth=2.2, label="2019–2026 only, 7.8 years")
+    a2.axvline(0, color=MUTED, linewidth=1)
+    a2.set_yticks(y, table["strategy"])
+    a2.set_xlabel("Annualized Sharpe over T-bills with 95% block-bootstrap CI")
+    a2.set_title("More out-of-sample years, narrower intervals", loc="left")
+    a2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.11), fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(FIG / "m13_walkforward.png", dpi=150)
+    plt.close(fig)
+
+    (FIG / "m13_by_year.md").write_text(to_markdown(by_year.reset_index(names="year").astype({"year": str}),
+                                                    pct=tuple(by_year.columns)))
+    (FIG / "m13_summary.md").write_text(to_markdown(table, pct=("worst year", "best year"), digits=2))
+    (FIG / "m13_differences.md").write_text(to_markdown(diffs, pct=(), digits=2))
+    (FIG / "m13_fits.md").write_text(to_markdown(fits.astype({"year": str, "train days": str}),
+                                                 pct=tuple(c for c in fits.columns if c.startswith("w ")), digits=2))
+    print(fits.to_string(index=False))
+    print(diffs.round(3).to_string(index=False))
+    print(by_year.round(3).to_string())
+    return table
+
+
 if __name__ == "__main__":
     FIG.mkdir(exist_ok=True)
     prices = data.load_prices()
@@ -675,3 +748,4 @@ if __name__ == "__main__":
     print("\n== m9 ==\n", m9(prices).round(3).to_string(index=False))
     print("\n== m11 ==\n", m11(results, rf).round(3).to_string(index=False))
     print("\n== m12 ==\n", m12(prices).round(3).to_string(index=False))
+    print("\n== m13 ==\n", m13(prices).round(3).to_string(index=False))

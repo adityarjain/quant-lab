@@ -317,6 +317,29 @@ def test_robust_allocation():
     assert np.allclose(wf.loc[:t], frontier.walk_forward(rets2, window=500, fit=rp).loc[:t])
 
 
+def test_walkforward():
+    import run as runmod
+    import walkforward as wfm
+
+    p = data.load_prices()
+    rf = data.load_rf(p.index)
+    fixed, live = wfm.fixed_strategies(p, rf, 10)
+    _, chosen, w = wfm.cutoff_fit(p, rf, data.SPLIT, fixed["XS momentum 12-1"], live, 10)
+
+    # At the main study's own cutoff, the re-fit reproduces the main study's pairs and weights exactly.
+    main_pairs = pairs.select(pairs.scan(data.split(p)[0]))
+    assert chosen[["a", "b"]].equals(main_pairs[["a", "b"]])
+    streams = runmod.strategy_streams(p)
+    assert np.allclose(w, frontier.max_sharpe(*frontier.annualize(runmod.excess(data.split(streams)[0], rf))))
+
+    # No look-ahead: reversing every price after the cutoff changes nothing that was fit.
+    p2 = p.copy()
+    after = p2.index >= data.SPLIT
+    p2.loc[after] = p2.loc[after].to_numpy()[::-1]
+    _, chosen2, w2 = wfm.cutoff_fit(p2, rf, data.SPLIT, fixed["XS momentum 12-1"], live, 10)
+    assert chosen2[["a", "b"]].equals(chosen[["a", "b"]]) and np.allclose(w2, w)
+
+
 def test_app():
     """Dashboard smoke test: runs headless, no errors, and its defaults reproduce the published
     test-period Sharpe ratios (so the UI can't silently drift from run.py)."""

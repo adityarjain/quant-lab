@@ -5,7 +5,7 @@
 *Momentum, pairs trading, mean-variance optimization and Monte Carlo risk on US large caps, 2010–2026, with a strict train/test split, T-bill excess returns, significance tests and backtested VaR.*
 
 ## Abstract
-We build two classic anomaly strategies, combine them with mean-variance optimization, and stress-test the result. Everything is fit on 2010–2018 and evaluated once on 2019–2026, net of 10 bps per unit of turnover, with Sharpe ratios measured in excess of 3-month T-bills. **No strategy beat a passive benchmark out of sample.** Cross-sectional 12-1 momentum earned a net Sharpe of 0.74 against 0.80 for an equal-weight portfolio of the same 48 stocks. The pairs screen found 6 cointegrated pairs out of 120, exactly the number chance predicts, and none stayed cointegrated after 2018 (test Sharpe 0.17). Mean-variance optimization put 0% in momentum, let a hand-set 40% cap decide the allocation, and lost to a naive 25%-each mix (0.52 vs 0.76): the two streams it favoured, pairs and bonds, collapsed out of sample. **Significance tests then show that none of these comparisons is statistically distinguishable from luck**: every 95% Sharpe interval spans roughly ±0.7, and every head-to-head difference has p ≥ 0.17. On risk, a static normal or historical VaR fit on the calm 2011–2018 period broke 2–6x too often after 2018. Rescaling the historical tail by current EWMA volatility (filtered historical simulation) **passes the Kupiec coverage test for all three portfolios at both 95% and 99%**. A six-factor regression (Fama-French 5 + momentum) finds **no significant alpha in any strategy out of sample**; momentum is a 0.97-beta market position with a modest momentum tilt. Estimators built to resist estimation error don't rescue the optimizer: Ledoit-Wolf and Bayes-Stein shrinkage leave its weights unchanged, and risk parity does worse still (0.38), because the problem was a regime change, not noisy estimates. The lesson is about process: in-sample numbers were convincing everywhere, and only an out-of-sample split, honest costs and formal inference exposed which ones were real.
+We build two classic anomaly strategies, combine them with mean-variance optimization, and stress-test the result. Everything is fit on 2010–2018 and evaluated once on 2019–2026, net of 10 bps per unit of turnover, with Sharpe ratios measured in excess of 3-month T-bills. **No strategy beat a passive benchmark out of sample.** Cross-sectional 12-1 momentum earned a net Sharpe of 0.74 against 0.80 for an equal-weight portfolio of the same 48 stocks. The pairs screen found 6 cointegrated pairs out of 120, exactly the number chance predicts, and none stayed cointegrated after 2018 (test Sharpe 0.17). Mean-variance optimization put 0% in momentum, let a hand-set 40% cap decide the allocation, and lost to a naive 25%-each mix (0.52 vs 0.76): the two streams it favoured, pairs and bonds, collapsed out of sample. **Significance tests then show that none of these comparisons is statistically distinguishable from luck**: every 95% Sharpe interval spans roughly ±0.7, and every head-to-head difference has p ≥ 0.17. On risk, a static normal or historical VaR fit on the calm 2011–2018 period broke 2–6x too often after 2018. Rescaling the historical tail by current EWMA volatility (filtered historical simulation) **passes the Kupiec coverage test for all three portfolios at both 95% and 99%**. A six-factor regression (Fama-French 5 + momentum) finds **no significant alpha in any strategy out of sample**; momentum is a 0.97-beta market position with a modest momentum tilt. Estimators built to resist estimation error don't rescue the optimizer: Ledoit-Wolf and Bayes-Stein shrinkage leave its weights unchanged, and risk parity does worse still (0.38), because the problem was a regime change, not noisy estimates. Re-running the whole design at 13 yearly cutoffs (2014–2026, everything re-fit on prior data only) turns one 7.8-year test into a 12.8-year out-of-sample record: confidence intervals shrink by about a quarter, the pairs book's Sharpe falls to 0.01, and still no difference between strategies is significant. The lesson is about process: in-sample numbers were convincing everywhere, and only an out-of-sample split, honest costs and formal inference exposed which ones were real.
 
 ## Hypothesis
 Momentum and pairs trading are among the most documented anomalies in equities. We test whether they survive realistic transaction costs **out-of-sample**, and whether combining them with mean-variance optimization improves risk-adjusted returns and tail risk versus any single strategy or buy-and-hold.
@@ -32,6 +32,7 @@ Momentum and pairs trading are among the most documented anomalies in equities. 
 | A volatility-adjusted VaR fixes that | **Yes.** EWMA-filtered historical VaR passes Kupiec at 95% and 99% for all three portfolios (M9). |
 | Any strategy has alpha beyond known factors | **No.** Largest test-period \|t(alpha)\| is 0.92 (M11). The only significant alpha (pairs, train, t = 2.1) is in-sample. |
 | Robust estimators fix the optimizer | **No.** Shrinkage leaves the weights unchanged; risk parity does worse (0.38 vs 0.76, M12). |
+| The conclusions survive other cutoffs | **Yes, and still none is significant.** Over 13 yearly out-of-sample periods the ranking holds; the differences shrink (p = 0.27–0.66, M13). |
 
 Generated by `run.py` as `figures/summary.md`.
 
@@ -175,6 +176,17 @@ M3's optimizer lost to 1/N. The standard remedies target estimation error, so M1
 - **Risk parity** (equal risk contribution): weights such that every stream contributes the same share of portfolio variance, $w_i(\Sigma w)_i = \tfrac1p\, w^\top\Sigma w$. It needs no return forecast at all. Solved by cyclical coordinate descent on the convex problem $\min_w \tfrac12 w^\top\Sigma w - \tfrac1p\sum_i \ln w_i$ (Griveau-Billion, Richard & Roncalli, 2013). Also run walk-forward (re-fit quarterly on 3 trailing years).
 
 ![M12 allocation](figures/m12_allocation.png)
+
+### M13 · Many out-of-sample periods (`walkforward.py`)
+A single 2019 cutoff is one draw of history. M13 re-runs the design at **every** year boundary from 2014 to 2026. For test year $Y$:
+
+1. Pairs are re-scanned and re-selected, and hedge ratios re-fit, on all prices before $Y$-01-01 (anchored, expanding window).
+2. The max-Sharpe weights are re-fit on the strategy streams before $Y$-01-01.
+3. That fit trades year $Y$ only. Momentum, MA 50/200, equal-weight 48 and SPY have no fitted parameters, so they are the same series sliced by year.
+
+The 13 test years are then stitched into one record from 2014-01-02 to 2026-10-06, **12.8 years, every day out of sample relative to its own fit**, and passed through the M8 machinery. `tests.py` checks two things: at the 2019 cutoff the re-fit reproduces the main study's pairs and weights exactly, and reversing every price after a cutoff leaves the fit unchanged. The first test year is 2014, the first with four years of training data. The turnover of switching pairs or weights at a year boundary is not charged; it is about one unit of capital a year, roughly 10 bps.
+
+![M13 walk-forward](figures/m13_walkforward.png)
 
 ## Results
 
@@ -377,6 +389,60 @@ Ledoit-Wolf shrinkage intensity δ = 0.005; Bayes-Stein weight φ = 0.62.
 | Risk parity − Equal-weight 4 | -0.38 | -0.82 | 0.02 | 0.06 |
 | Walk-forward risk parity − Equal-weight 4 | -0.24 | -0.60 | 0.09 | 0.16 |
 
+### M13 · Pooled out-of-sample 2014–2026 (12.8 years) vs the single 2019 split
+| strategy | Sharpe 2014–2026 | 95% CI low | 95% CI high | CI width | CI width 2019–2026 only | years beating SPY | worst year | best year |
+|---|---|---|---|---|---|---|---|---|
+| Buy & hold SPY | 0.73 | 0.23 | 1.32 | 1.08 | 1.43 | – | -18.2% | 31.2% |
+| Equal-weight 48 | 0.77 | 0.26 | 1.37 | 1.11 | 1.53 | 6/13 | -3.1% | 32.4% |
+| XS momentum 12-1 | 0.64 | 0.22 | 1.14 | 0.92 | 1.21 | 4/13 | -7.1% | 29.7% |
+| MA 50/200 on SPY | 0.55 | 0.07 | 1.14 | 1.07 | 1.41 | 2/13 | -6.6% | 28.7% |
+| Pairs portfolio (5) | 0.01 | -0.52 | 0.53 | 1.05 | 1.32 | 2/13 | -5.0% | 7.3% |
+| Max-Sharpe (re-fit yearly) | 0.56 | 0.04 | 1.18 | 1.14 | 1.43 | 2/13 | -8.2% | 12.4% |
+| Equal-weight 4 | 0.69 | 0.21 | 1.25 | 1.04 | 1.41 | 3/13 | -3.2% | 17.8% |
+
+| comparison (2014–2026) | ΔSharpe | 95% CI low | 95% CI high | p-value |
+|---|---|---|---|---|
+| Equal-weight 4 − Max-Sharpe (re-fit yearly) | 0.13 | -0.11 | 0.39 | 0.27 |
+| XS momentum 12-1 − Equal-weight 48 | -0.12 | -0.48 | 0.18 | 0.39 |
+| Equal-weight 48 − Buy & hold SPY | 0.03 | -0.18 | 0.31 | 0.64 |
+| Buy & hold SPY − Equal-weight 4 | 0.04 | -0.14 | 0.21 | 0.66 |
+
+### M13 · Calendar-year net returns, each year out of sample
+| year | Buy & hold SPY | Equal-weight 48 | XS momentum 12-1 | MA 50/200 on SPY | Pairs portfolio (5) | Max-Sharpe (re-fit yearly) | Equal-weight 4 | T-bills |
+|---|---|---|---|---|---|---|---|---|
+| 2014 | 13.5% | 16.5% | 13.2% | 13.5% | 4.4% | 6.9% | 9.4% | 0.0% |
+| 2015 | 1.2% | -0.2% | 3.6% | -4.3% | 0.5% | 0.9% | 1.8% | 0.1% |
+| 2016 | 12.0% | 14.7% | -1.7% | -0.5% | -0.1% | 3.4% | 3.3% | 0.3% |
+| 2017 | 21.7% | 20.7% | 29.7% | 21.7% | -5.0% | 3.6% | 11.9% | 0.9% |
+| 2018 | -4.6% | -3.1% | -7.1% | 0.8% | -1.1% | -1.1% | -2.7% | 1.9% |
+| 2019 | 31.2% | 28.9% | 24.7% | 16.7% | 7.1% | 12.4% | 17.8% | 2.1% |
+| 2020 | 18.3% | 9.4% | 16.8% | -4.4% | 2.4% | 8.6% | 12.7% | 0.4% |
+| 2021 | 28.7% | 32.4% | 22.5% | 28.7% | -1.1% | 4.1% | 11.8% | 0.0% |
+| 2022 | -18.2% | 3.0% | 17.2% | -6.6% | 1.4% | -8.2% | -3.2% | 2.0% |
+| 2023 | 26.2% | 9.9% | 5.0% | 19.5% | 7.3% | 9.1% | 11.1% | 5.2% |
+| 2024 | 24.9% | 15.5% | 19.8% | 24.9% | -1.9% | 5.3% | 10.8% | 5.1% |
+| 2025 | 17.7% | 18.4% | 15.0% | 1.0% | 6.6% | 11.6% | 12.2% | 4.1% |
+| 2026 | 15.4% | 15.4% | 20.2% | 15.4% | 4.4% | 7.1% | 9.4% | 2.8% |
+
+2026 runs to Oct 6.
+
+### M13 · What each cutoff fitted
+| year | train days | pairs selected | w Momentum | w Pairs | w SPY | w BND |
+|---|---|---|---|---|---|---|
+| 2014 | 1006 | C/GS, SO/ED, PEP/PG, MRK/ABT, C/MS | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2015 | 1258 | C/GS, ABT/LLY, PEP/PG, C/MS, SO/ED | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2016 | 1510 | C/GS, C/MS, MRK/ABT, NEE/D, GS/MS | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2017 | 1762 | C/GS, C/MS, NEE/D, HON/GE, NEE/AEP | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2018 | 2013 | C/MS, C/GS, GS/MS, NEE/AEP, KO/COST | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2019 | 2264 | C/GS, C/MS, KO/COST, MSFT/INTC, LOW/NKE | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2020 | 2516 | C/MS, C/GS, KO/COST, GS/MS, BAC/C | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2021 | 2769 | KO/COST, C/GS, LOW/NKE, GS/MS, C/MS | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2022 | 3021 | LOW/NKE, KO/COST, GS/MS, AAPL/ORCL, AAPL/MSFT | 0.0% | 40.0% | 20.0% | 40.0% |
+| 2023 | 3272 | GS/MS, KO/COST, AAPL/ORCL, CAT/DE, LOW/NKE | 7.1% | 40.0% | 13.5% | 39.4% |
+| 2024 | 3522 | KO/COST, GS/MS, AAPL/MSFT, PEP/COST, CAT/DE | 1.0% | 40.0% | 22.8% | 36.1% |
+| 2025 | 3774 | KO/COST, AAPL/MSFT, KO/PG, PG/COST | 0.0% | 31.8% | 40.0% | 28.2% |
+| 2026 | 4024 | KO/COST, AAPL/MSFT, HON/UNP | 7.5% | 12.5% | 40.0% | 40.0% |
+
 ## What failed
 
 **M1: momentum did not beat its own universe.** Cross-sectional momentum had a lower Sharpe than simply holding all 48 stocks equally, in both train (0.48 vs 0.88) and test (0.74 vs 0.80). It took on more volatility (22% vs 18% in test) without enough extra return to pay for it. Costs were *not* the reason: at about 5x annual turnover, 10 bps costs only about 0.03 Sharpe. The signal itself added little, which is consistent with momentum being a crowded, well-known anomaly, and with 48 mega-caps being too narrow a cross-section for ranking to matter much. (M8: the test-period gap of −0.06 is far from significant, p = 0.79.)
@@ -421,6 +487,14 @@ Ledoit-Wolf shrinkage intensity δ = 0.005; Bayes-Stein weight φ = 0.62.
 
 **M12: "1/N" won partly by being almost all equity risk.** Equal capital is not equal risk: 53% of equal-weight 4's variance came from momentum and 47% from SPY, so it was in effect a 100%-equity-risk portfolio, held through one of the strongest US equity decades on record. The 40/20/40 corner, by contrast, took 76% of its risk from a 20% SPY position. Which allocation "wins" depended mostly on which asset class the next regime rewarded, which is why none of these differences is significant (M8).
 
+**M13: more data narrows the intervals, but not enough.** Pooling 12.8 out-of-sample years shrinks every Sharpe interval by 20–28% (SPY: 1.43 → 1.08 wide), close to the $\sqrt{7.8/12.8} \approx 0.78$ that theory predicts. The rankings hold: passive SPY and equal-weight 48 (0.73, 0.77) still lead, 1/N (0.69) still beats the optimizer (0.56). But every gap got *smaller* with more data (1/N − max-Sharpe: 0.23 → 0.13), and none of the four comparisons is significant (p = 0.27–0.66). Distinguishing Sharpe ratios this close would need decades, not years. That is a property of the problem, not of this project.
+
+**M13: the pairs book is zero, and its pairs aren't stable.** Over 12.8 years of genuinely out-of-sample trading, the pairs portfolio's Sharpe over T-bills is **0.01** (95% CI −0.52 to 0.53). Its yearly returns track the T-bill rate it earns on idle capital (7.3% in 2023, when T-bills paid 5.2%). The "cointegrated" pairs themselves churn: 21 different pairs fill the 62 selection slots across 13 cutoffs, and only KO/COST, C/GS, C/MS and GS/MS recur often. C/GS was chosen every year from 2014 to 2021, then dropped as the relationship broke (M2). By 2025 and 2026 the screen finds only 4 and 3 pairs that pass at all. A relationship that has to be re-discovered every year with different members isn't a relationship.
+
+**M13: the optimizer's corner is stable, and that's the problem.** Re-fit on nine different training windows (2014–2022), max Sharpe chose the *identical* 40% pairs / 20% SPY / 40% BND every time, so it held that allocation straight into 2022, when bonds and stocks fell together (−8.2%, its worst year). Only after 2022's data entered the training window did it move, and then toward 40% SPY by 2025–26, after equities' strong run. Stable weights aren't the same as robust ones, and re-fitting on the past reacts to regime changes only after they've happened.
+
+**M13: momentum's value is concentrated in one year.** Cross-sectional momentum beat SPY in only 4 of 13 years. Its standout year was 2022 (+17.2% vs −18.2%), when the winners it held were energy stocks during the rate shock. That one year is most of the case for momentum as a diversifier, and one year is an anecdote. The 50/200 MA rule beat SPY in 2 of 13 years.
+
 ## Limitations
 - **Survivorship bias.** The universe is today's large caps, chosen with hindsight; firms that failed or shrank since 2010 are absent. This flatters every long-only result.
 - **Multiple testing.** The pair screen runs 120 hypothesis tests at 5% without a Bonferroni/BH correction; the M2 results show why this matters. M8's Deflated Sharpe uses N = 8, the strategies in the verdict table, which understates the true number of choices made (120 pairs scanned, two momentum variants, several allocations), so the DSRs reported are, if anything, optimistic.
@@ -429,14 +503,13 @@ Ledoit-Wolf shrinkage intensity δ = 0.005; Bayes-Stein weight φ = 0.62.
 - **Estimation error in M3.** $\mu$ is estimated from ~8 years of daily data; its standard error is of the same order as the differences between assets. The 40% cap is an arbitrary guard against that, and the results depend on it.
 - **Stationarity.** M4's models assume the train distribution persists. M9 relaxes this for volatility but still assumes the train period's *standardized* tail shape persists, with a fixed λ = 0.94.
 - **Engine simplification.** Target weights are held constant between signal changes (an implicit daily rebalance); turnover caused by price drift is not charged, so costs are slightly understated.
-- **One train/test split.** A single 2019 cutoff is one draw of history. Rolling or anchored walk-forward evaluation across many cutoffs would give a distribution of out-of-sample results rather than a point estimate.
+- **One history.** M13 replaces the single 2019 cutoff with 13 yearly cutoffs, but all of them share one historical path and overlapping (anchored) training data, so the yearly results are not independent experiments. Design choices that weren't fitted (the universe, textbook rule parameters, the 40% cap, 10 bps costs) were fixed before any test data was seen, but they are the same at every cutoff.
 
 ## Further work
 Each item comes from a specific failure above. All of them would need to be fit on train data only, and none was added after seeing test results:
 - **Pair monitoring (M2).** Drop a pair when its rolling cointegration p-value fails, rather than relying on z-score stops; correct the screen for multiple testing (Benjamini–Hochberg).
 - **Regime-aware allocation (M12).** Shrinkage and risk parity both assume the train regime persists. Volatility targeting, or covariances estimated from the M9 EWMA model, would let the allocation react when bond-equity correlations flip, as they did in 2022.
 - **Better volatility models (M9).** GARCH(1,1) or a faster-reacting EWMA to reduce the clustering left in the max-Sharpe portfolio's 99% breaches.
-- **More test periods (M8).** Many walk-forward cutoffs would narrow the confidence intervals that currently make every comparison inconclusive.
 - **Broader momentum (M1).** A larger universe (S&P 500 constituents *as of each date*, which also removes survivorship bias) and a long-short version to separate the momentum premium from market beta.
 - **Market transfer.** Re-run on an Indian large-cap universe with that market's costs (STT, stamp duty), risk-free rate and short-selling constraints.
 
@@ -472,6 +545,7 @@ Each item comes from a specific failure above. All of them would need to be fit 
 | `factors.py` | Fama-French 5 + momentum download/cache and Newey-West factor regressions (M11) |
 | `montecarlo.py` | normal and block-bootstrap simulation, VaR/CVaR, drawdowns; EWMA/FHS VaR and Kupiec/Christoffersen tests |
 | `significance.py` | Sharpe confidence intervals, paired difference tests, PSR, Deflated Sharpe (M8) |
+| `walkforward.py` | re-runs the full design at every yearly cutoff and stitches the out-of-sample years (M13) |
 | `run.py` | regenerates every figure and table in `figures/` |
 | `app.py` | interactive Streamlit dashboard over the same modules (UI only, no logic of its own) |
 | `tests.py` | one assert-based check per module (look-ahead, closed forms, synthetic data, test calibration) + a headless dashboard check |
