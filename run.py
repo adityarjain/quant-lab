@@ -10,6 +10,7 @@ from matplotlib.ticker import PercentFormatter
 
 import backtest
 import data
+import factors
 import frontier
 import momentum
 import montecarlo as mc
@@ -532,6 +533,123 @@ def m9(prices: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
+def m11(results: dict, rf: pd.Series) -> pd.DataFrame:
+    """Factor attribution of every verdict strategy, train and test, Newey-West t-stats."""
+    ff = factors.load_factors()
+    rows = []
+    for k in VERDICT:
+        for period, part in zip(("train", "test"), data.split(results[k]["net"])):
+            rows.append({"strategy": k, "period": period, **factors.regress(excess(part, rf), ff)})
+    table = pd.DataFrame(rows)
+    test = table[table["period"] == "test"].reset_index(drop=True)
+
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(13, 5.2), gridspec_kw={"width_ratios": [1.1, 1]}, sharey=True)
+    y = np.arange(len(test))[::-1]
+    se = (test["alpha/yr"] / test["t(alpha)"]).abs()
+    a1.hlines(y, test["alpha/yr"] - 1.96 * se, test["alpha/yr"] + 1.96 * se, color=SERIES[0], linewidth=2.2)
+    a1.scatter(test["alpha/yr"], y, s=60, color=SERIES[0], edgecolor=SURFACE, linewidth=1.5, zorder=3)
+    for yi, (_, r), s_i in zip(y, test.iterrows(), se):
+        a1.text(r["alpha/yr"] + 1.96 * s_i + 0.003, yi, f"{r['alpha/yr']:+.1%}  t = {r['t(alpha)']:.2f}",
+                va="center", fontsize=8, color=INK2)
+    a1.axvline(0, color=MUTED, linewidth=1)
+    a1.set_yticks(y, test["strategy"])
+    a1.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+    a1.set_xlim(None, (test["alpha/yr"] + 1.96 * se).max() + 0.09)
+    a1.set_xlabel("Annual alpha after 6 factors, test (95% Newey-West CI)")
+    a1.set_title("M11 · Alpha after Fama-French 5 + momentum", loc="left")
+    for i, (col, c) in enumerate((("β Mkt-RF", SERIES[1]), ("β Mom", SERIES[2]))):
+        a2.barh(y + (0.18 if i == 0 else -0.18), test[col], height=0.34, color=c, label=col)
+    for yi, r2 in zip(y, test["R²"]):
+        a2.text(1.32, yi, f"R² {r2:.2f}", va="center", fontsize=8, color=INK2)
+    a2.axvline(0, color=MUTED, linewidth=1)
+    a2.axvline(1, color=MUTED, linewidth=0.8, linestyle=":")
+    a2.set_xlim(-0.35, 1.55)
+    a2.set_xlabel("Factor loading, test")
+    a2.set_title("Market and momentum loadings", loc="left")
+    a2.legend(loc="upper center", bbox_to_anchor=(0.45, -0.12), fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(FIG / "m11_factors.png", dpi=150)
+    plt.close(fig)
+
+    cols = ["strategy", "period", "alpha/yr", "t(alpha)", "p(alpha)"] + [f"β {c}" for c in factors.FACTORS] + ["R²", "days"]
+    (FIG / "m11_factors.md").write_text(to_markdown(table[cols], pct=("alpha/yr",), digits=2))
+    print(f"factor data end: {ff.index[-1].date()}")
+    return table[cols]
+
+
+def m12(prices: pd.DataFrame) -> pd.DataFrame:
+    """Estimators built to survive estimation error, against the sample max-Sharpe and 1/N."""
+    streams = strategy_streams(prices)
+    rf = data.load_rf(prices.index)
+    ex = excess(streams, rf)
+    ex_train, _ = data.split(ex)
+    mu_s, cov_s = frontier.annualize(ex_train)
+    cov_lw, delta = frontier.ledoit_wolf(ex_train)
+    mu_bs, phi = frontier.bayes_stein_mu(ex_train, cov_lw)
+    ew = pd.Series(0.25, index=streams.columns)
+    fitted = {
+        "Max-Sharpe (sample)": frontier.max_sharpe(mu_s, cov_s),
+        "Max-Sharpe (Bayes-Stein μ, LW Σ)": frontier.max_sharpe(mu_bs, cov_lw),
+        "Min-variance (LW Σ)": frontier.min_variance(mu_s, cov_lw),
+        "Risk parity": frontier.risk_parity(cov_s),
+        "Equal-weight 4": ew,
+    }
+    wf_rp = frontier.walk_forward(ex, fit=lambda h: frontier.risk_parity(frontier.annualize(h)[1]))
+    equity = (1 + streams).cumprod()
+    const = lambda w: pd.DataFrame([w.to_numpy()] * len(streams), index=streams.index, columns=streams.columns)
+    allocs = {k: const(w) for k, w in fitted.items()} | {"Walk-forward risk parity": wf_rp}
+    live0 = wf_rp.sum(axis=1).gt(0).idxmax()
+    results = {k: backtest.run(w, equity, COST_BPS, rf).loc[live0:] for k, w in allocs.items()}
+    table = metrics_table(results, rf)
+
+    test_ex = {k: excess(data.split(r)[1]["net"], rf) for k, r in results.items()}
+    diffs = pd.DataFrame([dict(zip(("comparison", "ΔSharpe", "95% CI low", "95% CI high", "p-value"),
+                                   (f"{k} − Equal-weight 4",
+                                    *significance.sharpe_diff(test_ex[k], test_ex["Equal-weight 4"], seed=data.SEED))))
+                          for k in results if k != "Equal-weight 4"])
+    wtab = pd.DataFrame(fitted).T
+    risk = pd.DataFrame({k: frontier.risk_contributions(w, cov_s) for k, w in fitted.items()}).T
+
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(11, 9.5), gridspec_kw={"height_ratios": [1, 1.4]})
+    y = np.arange(len(wtab))[::-1]
+    left = np.zeros(len(wtab))
+    for asset, c in zip(wtab.columns, SERIES):  # same asset colours as the M3 walk-forward panel
+        a1.barh(y, wtab[asset], left=left, color=c, edgecolor=SURFACE, linewidth=1.5, label=asset, height=0.62)
+        for yi, l, v in zip(y, left, wtab[asset]):
+            if v >= 0.06:
+                a1.text(l + v / 2, yi, f"{v:.0%}", ha="center", va="center", fontsize=8, color=SURFACE)
+        left += wtab[asset].to_numpy()
+    a1.set_yticks(y, wtab.index)
+    a1.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+    a1.set_xlim(0, 1)
+    a1.grid(False)
+    a1.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fontsize=8, ncol=4)
+    a1.set_title(f"M12 · Train-fitted weights (LW δ = {delta:.3f}, Bayes-Stein φ = {phi:.2f})", loc="left")
+    same = wtab.iloc[:3].round(6).nunique().max() == 1  # the three mean-variance variants coincide
+    show = {"Risk parity": "Risk parity", "Walk-forward risk parity": "Walk-forward risk parity",
+            "Max-Sharpe (sample)": "All 3 mean-variance variants (identical weights)" if same else "Max-Sharpe (sample)",
+            "Equal-weight 4": "Equal-weight 4"}
+    for (name, label), c in zip(show.items(), SERIES):
+        eq = (1 + data.split(results[name])[1]["net"]).cumprod()
+        a2.plot(eq.index, eq, color=c, label=f"{label}  {eq.iloc[-1]:.2f}x")
+    a2.set_ylabel("Growth of $1 (test, net)")
+    a2.set_title("Out of sample 2019–2026", loc="left")
+    a2.legend(loc="upper left", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(FIG / "m12_allocation.png", dpi=150)
+    plt.close(fig)
+
+    (FIG / "m12_metrics.md").write_text(to_markdown(table))
+    (FIG / "m12_weights.md").write_text(to_markdown(wtab.reset_index(names="method"), pct=tuple(wtab.columns)))
+    (FIG / "m12_risk_contributions.md").write_text(to_markdown(risk.reset_index(names="method"), pct=tuple(risk.columns)))
+    (FIG / "m12_vs_equal_weight.md").write_text(to_markdown(diffs, pct=(), digits=2))
+    print(f"Ledoit-Wolf delta = {delta:.4f}, Bayes-Stein phi = {phi:.3f}")
+    print("weights:\n", wtab.round(3).to_string())
+    print("risk contributions:\n", risk.round(3).to_string())
+    print(diffs.round(3).to_string(index=False))
+    return table
+
+
 if __name__ == "__main__":
     FIG.mkdir(exist_ok=True)
     prices = data.load_prices()
@@ -555,3 +673,5 @@ if __name__ == "__main__":
 
     print("\n== m8 ==\n", m8(results, rf).round(3).to_string(index=False))
     print("\n== m9 ==\n", m9(prices).round(3).to_string(index=False))
+    print("\n== m11 ==\n", m11(results, rf).round(3).to_string(index=False))
+    print("\n== m12 ==\n", m12(prices).round(3).to_string(index=False))

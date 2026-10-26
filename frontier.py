@@ -80,9 +80,11 @@ def random_portfolios(mu: pd.Series, cov: pd.DataFrame, n: int = 10_000, seed: i
     return pd.DataFrame({"ret": ret, "vol": vol, "sharpe": ret / vol})
 
 
-def walk_forward(returns: pd.DataFrame, window: int = 756, cap: float = CAP) -> pd.DataFrame:
-    """Re-fit max-Sharpe every quarter end on the trailing `window` days only (no future data).
+def walk_forward(returns: pd.DataFrame, window: int = 756, cap: float = CAP, fit=None) -> pd.DataFrame:
+    """Re-fit every quarter end on the trailing `window` days only (no future data).
+    `fit(hist_returns) -> weights`; default = sample max-Sharpe with the cap.
     Returns target weights on rebalance dates, forward-filled to daily."""
+    fit = fit or (lambda h: max_sharpe(*annualize(h), cap))
     idx = returns.index
     s = idx.to_series()
     rebal = pd.DatetimeIndex(s.groupby(idx.to_period("Q")).max().values)
@@ -91,6 +93,63 @@ def walk_forward(returns: pd.DataFrame, window: int = 756, cap: float = CAP) -> 
         hist = returns.loc[:t].tail(window)
         if len(hist) < window:
             continue
-        mu, cov = annualize(hist)
-        rows[t] = max_sharpe(mu, cov, cap)
+        rows[t] = fit(hist)
     return pd.DataFrame(rows).T.reindex(idx).ffill().fillna(0.0)
+
+
+# ---------------------------------------------------------------- M12: estimators robust to estimation error
+def ledoit_wolf(returns: pd.DataFrame):
+    """Ledoit & Wolf (2004) shrinkage of the sample covariance toward a scaled identity.
+    Returns (annualized covariance, shrinkage intensity delta in [0, 1])."""
+    x = (returns - returns.mean()).to_numpy()
+    n, p = x.shape
+    s = x.T @ x / n
+    m = np.trace(s) / p
+    d2 = np.sum((s - m * np.eye(p)) ** 2)
+    sq = np.sum(x ** 2, axis=1)  # ||x_k||^2
+    b2_bar = (np.sum(sq ** 2) - 2 * np.einsum("ki,ij,kj->", x, s, x) + n * np.sum(s ** 2)) / n ** 2
+    delta = float(min(b2_bar, d2) / d2) if d2 > 0 else 1.0
+    shrunk = delta * m * np.eye(p) + (1 - delta) * s
+    return pd.DataFrame(shrunk * TRADING_DAYS, index=returns.columns, columns=returns.columns), delta
+
+
+def bayes_stein_mu(returns: pd.DataFrame, cov: pd.DataFrame | None = None):
+    """Jorion (1986) Bayes-Stein shrinkage of mean returns toward the minimum-variance portfolio's mean.
+    Returns (annualized shrunk mu, shrinkage weight phi in [0, 1]). `cov` annualized; sample if None."""
+    n, p = returns.shape
+    m = returns.mean().to_numpy()
+    c = (cov.to_numpy() / TRADING_DAYS) if cov is not None else returns.cov().to_numpy()
+    ci = np.linalg.inv(c)
+    one = np.ones(p)
+    m0 = one @ ci @ m / (one @ ci @ one)
+    gap = m - m0
+    phi = float((p + 2) / ((p + 2) + n * gap @ ci @ gap))
+    return pd.Series(((1 - phi) * m + phi * m0) * TRADING_DAYS, index=returns.columns), phi
+
+
+def risk_parity(cov: pd.DataFrame) -> pd.Series:
+    """Equal risk contribution: every asset adds the same share of portfolio variance.
+    Needs no return forecast. Solves the convex problem min 0.5 w'Sw - (1/p) sum(log w), then normalizes."""
+    c = cov.to_numpy() / np.mean(np.diag(cov.to_numpy()))  # weights are scale-free
+    p = len(c)
+    x = np.full(p, 1 / np.sqrt(p))
+    # Cyclical coordinate descent (Griveau-Billion, Richard & Roncalli, 2013): each coordinate's
+    # first-order condition c_ii x_i^2 + b_i x_i - 1/p = 0 has one positive root, solved exactly.
+    for _ in range(10_000):
+        prev = x.copy()
+        for i in range(p):
+            b = c[i] @ x - c[i, i] * x[i]
+            x[i] = (-b + np.sqrt(b * b + 4 * c[i, i] / p)) / (2 * c[i, i])
+        if np.abs(x - prev).max() < 1e-14:
+            break
+    w = pd.Series(x / x.sum(), index=cov.index)
+    # Judge by the defining property, not by an iteration count.
+    if np.abs(risk_contributions(w, cov) - 1 / p).max() > 1e-6:
+        raise RuntimeError("risk parity did not converge")
+    return w
+
+
+def risk_contributions(w: pd.Series, cov: pd.DataFrame) -> pd.Series:
+    """Share of portfolio variance from each asset: w_i (S w)_i / w'S w."""
+    cw = cov.to_numpy() @ w.to_numpy()
+    return pd.Series(w.to_numpy() * cw / (w.to_numpy() @ cw), index=w.index)

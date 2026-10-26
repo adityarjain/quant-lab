@@ -239,6 +239,84 @@ def test_var_backtest():
     assert np.allclose(mc.ewma_sigma(r).iloc[:3001].dropna(), mc.ewma_sigma(r2).iloc[:3001].dropna())
 
 
+def test_factors():
+    import io
+    import zipfile
+
+    import factors
+
+    # Parser: French files wrap one 'YYYYMMDD, values in %' block in free text.
+    text = "Some header text\n\n,Mkt-RF,SMB,HML,RMW,CMA,RF\n20200102,  1.50, -0.20,  0.10,  0.00, -0.05,  0.01\n" \
+           "20200103, -0.50,  0.30,  0.00,  0.10,  0.00,  0.01\n\n Copyright footer\n"
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as z:
+        z.writestr("f.csv", text)
+    df = factors._read_french(buf.getvalue(), ["Mkt-RF", "SMB"])
+    assert list(df.columns) == ["Mkt-RF", "SMB"] and np.allclose(df.iloc[0], [0.015, -0.002])
+    assert df.index[1] == pd.Timestamp("2020-01-03")
+
+    # Regression recovers known loadings and alpha.
+    rng = np.random.default_rng(data.SEED)
+    n = 2000
+    idx = pd.bdate_range("2015-01-01", periods=n)
+    f = pd.DataFrame(rng.normal(0, 0.01, (n, 6)), index=idx, columns=factors.FACTORS)
+    y = 0.0004 + 1.2 * f["Mkt-RF"] + 0.5 * f["Mom"] + rng.normal(0, 0.002, n)
+    out = factors.regress(y, f)
+    assert abs(out["β Mkt-RF"] - 1.2) < 0.05 and abs(out["β Mom"] - 0.5) < 0.05 and abs(out["β HML"]) < 0.05
+    assert abs(out["alpha/yr"] - 0.0004 * 252) < 0.03 and out["t(alpha)"] > 3 and out["R²"] > 0.9
+
+    # With true alpha = 0, |t(alpha)| > 1.96 should happen ~5% of the time (Newey-West is roughly calibrated).
+    ts = []
+    for s in range(150):
+        g = np.random.default_rng(s)
+        ff = pd.DataFrame(g.normal(0, 0.01, (1000, 6)), columns=factors.FACTORS)
+        ts.append(factors.regress(0.8 * ff["Mkt-RF"] + pd.Series(g.normal(0, 0.005, 1000)), ff)["t(alpha)"])
+    assert np.mean(np.abs(ts) > 1.96) < 0.10
+
+
+def test_robust_allocation():
+    names = ["A", "B", "C", "D"]
+    vol = np.array([0.05, 0.10, 0.20, 0.40])
+    diag = pd.DataFrame(np.diag(vol ** 2), index=names, columns=names)
+    # Risk parity, uncorrelated: weights proportional to 1/sigma, equal risk contributions.
+    w = frontier.risk_parity(diag)
+    assert np.allclose(w, (1 / vol) / (1 / vol).sum(), atol=1e-6)
+    corr = np.full((4, 4), 0.3) + 0.7 * np.eye(4)
+    cov = pd.DataFrame(corr * np.outer(vol, vol), index=names, columns=names)
+    w = frontier.risk_parity(cov)
+    assert np.isclose(w.sum(), 1) and np.allclose(frontier.risk_contributions(w, cov), 0.25, atol=1e-6)
+
+    rng = np.random.default_rng(data.SEED)
+    # Ledoit-Wolf: lots of shrinkage when data are few and truly unstructured; almost none with
+    # plenty of data and real structure. Always a valid (positive definite) covariance.
+    few = pd.DataFrame(rng.normal(0, 0.01, (30, 20)))
+    many = pd.DataFrame(rng.multivariate_normal(np.zeros(4), cov.to_numpy() / 252, 5000), columns=names)
+    s_few, d_few = frontier.ledoit_wolf(few)
+    s_many, d_many = frontier.ledoit_wolf(many)
+    assert 0.5 < d_few <= 1 and 0 <= d_many < 0.05
+    assert np.linalg.eigvalsh(s_few.to_numpy()).min() > 0
+
+    # Bayes-Stein: shrunk means lie between the sample means and the common target; more data, less shrinkage.
+    r = pd.DataFrame(rng.normal([0.0002, 0.0004, 0.0006, 0.0008], 0.01, (500, 4)), columns=names)
+    mu_bs, phi = frontier.bayes_stein_mu(r)
+    target = (mu_bs - (1 - phi) * r.mean() * 252) / phi
+    assert 0 < phi < 1 and np.allclose(target, target.iloc[0])  # one common target for every asset
+    lo, hi = np.minimum(r.mean() * 252, target), np.maximum(r.mean() * 252, target)
+    assert ((mu_bs >= lo - 1e-12) & (mu_bs <= hi + 1e-12)).all()
+    big = pd.concat([r] * 10, ignore_index=True)
+    assert frontier.bayes_stein_mu(big)[1] < phi
+
+    # Walk-forward with a custom fit: still fully invested and blind to the future.
+    rets = _random_prices(n_days=1200, n_assets=4).pct_change().dropna()
+    rp = lambda h: frontier.risk_parity(frontier.annualize(h)[1])
+    wf = frontier.walk_forward(rets, window=500, fit=rp)
+    t = rets.index[800]
+    rets2 = rets.copy()
+    rets2.loc[rets2.index > t] *= 4
+    assert np.allclose(wf.iloc[600:].sum(axis=1), 1)
+    assert np.allclose(wf.loc[:t], frontier.walk_forward(rets2, window=500, fit=rp).loc[:t])
+
+
 def test_app():
     """Dashboard smoke test: runs headless, no errors, and its defaults reproduce the published
     test-period Sharpe ratios (so the UI can't silently drift from run.py)."""
