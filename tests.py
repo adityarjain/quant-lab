@@ -340,6 +340,31 @@ def test_walkforward():
     assert chosen2[["a", "b"]].equals(chosen[["a", "b"]]) and np.allclose(w2, w)
 
 
+def test_india():
+    # Spike filter: a 2-day print at 1/100 that snaps back is removed; a real -60% step is kept.
+    idx = pd.bdate_range("2019-12-16", periods=10)
+    p = pd.DataFrame({"BAD": [33.6, 33.6, 33.6, 0.34, 0.34, 33.65, 33.7, 33.8, 33.9, 34.0],
+                      "REAL": [100, 100, 100, 40, 41, 42, 42, 43, 43, 44]}, index=idx, dtype=float)
+    out = data.clean(data.remove_spikes(p))
+    assert out["BAD"].min() > 30 and np.isclose(out.loc[idx[3], "BAD"], 33.6)  # filled from the last good price
+    assert out["REAL"].equals(p["REAL"])
+
+    # pairs.scan follows the sector map it is given (India's), not the US default.
+    sec = {"X": ["A", "B", "C"]}
+    rng = np.random.default_rng(data.SEED)
+    px = pd.DataFrame(np.exp(np.cumsum(rng.normal(0, 0.01, (600, 3)), axis=0)), columns=["A", "B", "C"],
+                      index=pd.bdate_range("2012-01-02", periods=600))
+    s = pairs.scan(px, sec)
+    assert len(s) == 3 and set(s["sector"]) == {"X"}
+
+    # Cached Indian data: clean (no move above 50% survives) and a plausible short rate.
+    pin = data.load_prices_in()
+    assert pin.shape[1] == len(data.IN_TICKERS) and pin.notna().all().all()
+    assert pin.pct_change().abs().max().max() < 0.5
+    rf = data.load_rf(pin.index, **data.IN_RF)
+    assert 0.03 < rf.mean() * 252 < 0.10  # India's call-money rate averaged ~6–7% over 2010–2026
+
+
 def test_app():
     """Dashboard smoke test: runs headless, no errors, and its defaults reproduce the published
     test-period Sharpe ratios (so the UI can't silently drift from run.py)."""

@@ -723,6 +723,149 @@ def m13(prices: pd.DataFrame) -> pd.DataFrame:
     return table
 
 
+# Indian costs per unit of one-way turnover (delivery trades, 2024-25 schedules): STT 10 bps on every buy
+# and sell, stamp duty 1.5 bps on buys, exchange + SEBI fees + GST ~0.4 bps -> ~11 bps statutory, plus ~9 bps
+# of spread/impact for large caps. The pairs' short legs would trade as stock futures (lower STT, monthly rolls);
+# the same rate is applied to both legs.
+IN_COST_BPS = 20
+IN_NAMES = {"Buy & hold SPY": "Buy & hold Nifty", "MA 50/200 on SPY": "MA 50/200 on Nifty"}
+
+
+def m14(prices_us: pd.DataFrame, tables: dict) -> pd.DataFrame:
+    """M14 transfer study: the M1–M3 design on 48 NSE large caps, with Indian costs and short rate."""
+    p = data.load_prices_in()
+    rf = data.load_rf(p.index, **data.IN_RF)
+    stocks = [t for t in p.columns if t not in data.IN_BENCHMARKS]
+    train, test = data.split(p)
+    scanned = pairs.scan(train, data.IN_SECTORS)
+    chosen = pairs.select(scanned)
+    chosen["p_test"] = [pairs.coint_pvalue(test[r.a], test[r.b]) for r in chosen.itertuples()]
+    mom_w = momentum.cross_sectional(p, stocks)
+    weights = {
+        "Buy & hold Nifty": momentum.buy_and_hold(p, "NIFTYBEES"),
+        "Equal-weight 48": momentum.equal_weight(p, stocks),
+        "XS momentum 12-1": mom_w,
+        "MA 50/200 on Nifty": momentum.ma_crossover(p, "NIFTYBEES"),
+        "Pairs portfolio (5)": pairs.portfolio(p, chosen),
+    }
+    res = {k: backtest.run(w, p, IN_COST_BPS, rf) for k, w in weights.items()}
+
+    live = p.index[p.index.get_loc(mom_w.sum(axis=1).gt(0).idxmax()) + 1]
+    streams = pd.DataFrame({"Momentum": res["XS momentum 12-1"]["net"], "Pairs": res["Pairs portfolio (5)"]["net"],
+                            "Nifty": p["NIFTYBEES"].pct_change(), "Gold": p["GOLDBEES"].pct_change()}).loc[live:]
+    ms_w = frontier.max_sharpe(*frontier.annualize(data.split(excess(streams, rf))[0]))
+    equity = (1 + streams).cumprod()
+    const = lambda v: pd.DataFrame([v.to_numpy()] * len(streams), index=streams.index, columns=streams.columns)
+    res["Max-Sharpe (train fit)"] = backtest.run(const(ms_w), equity, IN_COST_BPS, rf)
+    res["Equal-weight 4"] = backtest.run(const(pd.Series(0.25, index=streams.columns)), equity, IN_COST_BPS, rf)
+    table = metrics_table(res, rf)
+
+    # Same strategies, US vs India, test period.
+    us = pd.concat([tables[k] for k in ("m1", "m2", "m3")])
+    us = us[us["period"] == "test"].drop_duplicates("strategy").set_index("strategy")
+    india = table[table["period"] == "test"].set_index("strategy")
+    rows = []
+    for us_name in ["Buy & hold SPY", "Equal-weight 48", "XS momentum 12-1", "MA 50/200 on SPY", "Pairs portfolio (5)",
+                    "Max-Sharpe (train fit)", "Equal-weight 4"]:
+        in_name = IN_NAMES.get(us_name, us_name)
+        label = us_name.replace("SPY", "SPY / Nifty")
+        rows.append({"strategy": label,
+                     "US Sharpe": us.loc[us_name, "Sharpe (net)"], "India Sharpe": india.loc[in_name, "Sharpe (net)"],
+                     "US CAGR": us.loc[us_name, "CAGR (net)"], "India CAGR": india.loc[in_name, "CAGR (net)"],
+                     "US maxDD": us.loc[us_name, "maxDD"], "India maxDD": india.loc[in_name, "maxDD"]})
+    compare = pd.DataFrame(rows)
+
+    # Cost sensitivity of the two traded strategies, both markets, test-period Sharpe.
+    us_rf = data.load_rf(prices_us.index)
+    us_stocks = [t for t in prices_us.columns if t not in data.BENCHMARKS]
+    us_w = {"XS momentum 12-1": momentum.cross_sectional(prices_us, us_stocks),
+            "Pairs portfolio (5)": pairs.portfolio(prices_us, pairs.select(pairs.scan(data.split(prices_us)[0])))}
+    in_w = {k: weights[k] for k in us_w}
+    grid = [0, 10, 20, 30, 40, 60]
+    costs = []
+    for bps in grid:
+        row = {"cost (bps)": str(bps)}
+        for mkt, (px, w_map, r_f) in {"US": (prices_us, us_w, us_rf), "India": (p, in_w, rf)}.items():
+            for k, w in w_map.items():
+                net = data.split(backtest.run(w, px, bps, r_f)["net"])[1]
+                row[f"{mkt} · {k}"] = backtest.sharpe(net, r_f)
+        costs.append(row)
+    costs = pd.DataFrame(costs)
+
+    ex_t = {k: excess(data.split(r)[1]["net"], rf) for k, r in res.items()}
+    sig_rows = [dict(zip(("strategy", "Sharpe", "95% CI low", "95% CI high"),
+                         (k, *significance.sharpe_ci(e, seed=data.SEED)))) for k, e in ex_t.items()]
+    for a, b in [("XS momentum 12-1", "Equal-weight 48"), ("Equal-weight 4", "Max-Sharpe (train fit)"),
+                 ("Equal-weight 48", "Buy & hold Nifty")]:
+        d, lo, hi, pv = significance.sharpe_diff(ex_t[a], ex_t[b], seed=data.SEED)
+        sig_rows.append({"strategy": f"{a} − {b}", "Sharpe": d, "95% CI low": lo, "95% CI high": hi, "p-value": pv})
+    sig = pd.DataFrame(sig_rows)
+
+    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+    ax = axs[0, 0]
+    for k, c in zip(["XS momentum 12-1", "MA 50/200 on Nifty", "Equal-weight 48", "Buy & hold Nifty"], SERIES):
+        eq = (1 + data.split(res[k])[1]["net"]).cumprod()
+        ax.plot(eq.index, eq, color=c, label=f"{k}  {eq.iloc[-1]:.2f}x")
+    ax.set_ylabel("Growth of ₹1 (test, net of 20 bps)")
+    ax.set_title("M14 · India, out of sample 2019–2026", loc="left")
+    ax.legend(loc="upper left", fontsize=8)
+
+    ax = axs[0, 1]
+    for k, c in zip(["XS momentum 12-1", "Pairs portfolio (5)"], SERIES):
+        ax.plot(grid, costs[f"India · {k}"], color=c, marker="o", label=f"India · {k}")
+        ax.plot(grid, costs[f"US · {k}"], color=c, marker="o", linestyle="--", alpha=0.8, label=f"US · {k}")
+    ax.axhline(0, color=MUTED, linewidth=1)
+    for x_, lab in ((10, "US base"), (IN_COST_BPS, "India base")):
+        ax.axvline(x_, color=MUTED, linestyle=":", linewidth=1)
+        ax.text(x_, ax.get_ylim()[1], f" {lab}", color=MUTED, fontsize=8, va="top")
+    ax.set_xlabel("Cost per unit of turnover (bps)")
+    ax.set_ylabel("Test Sharpe over the local short rate")
+    ax.set_title("Cost sensitivity", loc="left")
+    ax.legend(loc="lower left", fontsize=8)
+
+    ax = axs[1, 0]
+    y = np.arange(len(compare))[::-1]
+    ax.barh(y + 0.18, compare["US Sharpe"], height=0.34, color=SERIES[2], label="US (over T-bills, 10 bps)")
+    ax.barh(y - 0.18, compare["India Sharpe"], height=0.34, color=SERIES[3], label="India (over call money, 20 bps)")
+    ax.axvline(0, color=MUTED, linewidth=1)
+    ax.set_yticks(y, compare["strategy"])
+    ax.set_xlabel("Test Sharpe (net)")
+    ax.set_title("Same design, two markets", loc="left")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.1), fontsize=8, ncol=2)
+
+    ax = axs[1, 1]
+    single = sig[~sig["strategy"].str.contains(" − ")].reset_index(drop=True)
+    y = np.arange(len(single))[::-1]
+    ax.hlines(y, single["95% CI low"], single["95% CI high"], color=INK, linewidth=2.2)
+    ax.scatter(single["Sharpe"], y, s=50, color=INK, edgecolor=SURFACE, linewidth=1.5, zorder=3)
+    ax.axvline(0, color=MUTED, linewidth=1)
+    ax.set_yticks(y, single["strategy"])
+    ax.set_xlabel("India test Sharpe with 95% block-bootstrap CI")
+    ax.set_title("…with the same uncertainty", loc="left")
+    fig.tight_layout()
+    fig.savefig(FIG / "m14_india.png", dpi=150)
+    plt.close(fig)
+
+    (FIG / "m14_metrics.md").write_text(to_markdown(table))
+    (FIG / "m14_pairs.md").write_text(to_markdown(
+        chosen[["sector", "a", "b", "corr", "pvalue", "p_test", "beta", "half_life"]], pct=(), digits=3))
+    (FIG / "m14_weights.md").write_text(to_markdown(
+        pd.DataFrame({"asset": ms_w.index, "max Sharpe": ms_w.values}), pct=("max Sharpe",)))
+    (FIG / "m14_us_vs_india.md").write_text(to_markdown(
+        compare, pct=("US CAGR", "India CAGR", "US maxDD", "India maxDD")))
+    (FIG / "m14_costs.md").write_text(to_markdown(costs, pct=(), digits=2))
+    (FIG / "m14_significance.md").write_text(to_markdown(sig, pct=(), digits=2).replace("nan", "–"))
+    passed = scanned["pvalue"] < 0.05
+    print(f"India scan: {passed.sum()} of {len(scanned)} cointegrated at 5%; corr>0.7: {(scanned['corr'] > 0.7).sum()}, "
+          f"of which not cointegrated: {((scanned['corr'] > 0.7) & ~passed).sum()}")
+    print("India pairs:\n", chosen.round(3).to_string(index=False))
+    print("max-Sharpe weights:", ms_w.round(3).to_dict())
+    print(compare.round(3).to_string(index=False))
+    print(costs.round(3).to_string(index=False))
+    print(sig.round(3).to_string(index=False))
+    return table
+
+
 if __name__ == "__main__":
     FIG.mkdir(exist_ok=True)
     prices = data.load_prices()
@@ -749,3 +892,4 @@ if __name__ == "__main__":
     print("\n== m11 ==\n", m11(results, rf).round(3).to_string(index=False))
     print("\n== m12 ==\n", m12(prices).round(3).to_string(index=False))
     print("\n== m13 ==\n", m13(prices).round(3).to_string(index=False))
+    print("\n== m14 ==\n", m14(prices, tables).round(3).to_string(index=False))

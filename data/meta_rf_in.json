@@ -1,0 +1,6 @@
+{
+  "downloaded": "2026-10-27",
+  "source": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=IRSTCI01INM156N&cosd=2009-12-01",
+  "series": "IRSTCI01INM156N, India interbank call-money rate (OECD MEI), % p.a., monthly",
+  "end": "2026-09-01"
+}

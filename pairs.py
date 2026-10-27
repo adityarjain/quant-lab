@@ -33,11 +33,12 @@ def coint_pvalue(a: pd.Series, b: pd.Series) -> float:
     return float(coint(np.log(a), np.log(b))[1])
 
 
-def scan(train: pd.DataFrame) -> pd.DataFrame:
-    """Every within-sector pair: return correlation vs cointegration, hedge ratio, half-life."""
+def scan(train: pd.DataFrame, sectors: dict | None = None) -> pd.DataFrame:
+    """Every within-sector pair: return correlation vs cointegration, hedge ratio, half-life.
+    `sectors` defaults to the US universe (data.SECTORS)."""
     rows = []
     rets = train.pct_change()
-    for sector, names in data.SECTORS.items():
+    for sector, names in (sectors or data.SECTORS).items():
         for a, b in itertools.combinations([n for n in names if n in train], 2):
             beta = hedge_ratio(train[a], train[b])
             rows.append({
