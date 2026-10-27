@@ -1,4 +1,5 @@
 """Regenerates every figure and results table. Run: python run.py"""
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -22,16 +23,33 @@ import walkforward
 FIG = Path(__file__).parent / "figures"
 COST_BPS = 10
 
-# Dark chart theme; categorical slots validated (lightness, chroma, CVD, contrast) against the surface.
-SURFACE, INK, INK2, MUTED, GRID, AXIS = "#1a1a19", "#ffffff", "#c3c2b7", "#898781", "#2c2c2a", "#383835"
-SERIES = ["#3987e5", "#d95926", "#199e70", "#c98500"]
-plt.rcParams.update({
-    "figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "savefig.facecolor": SURFACE,
-    "axes.edgecolor": AXIS, "axes.labelcolor": INK2, "axes.titlecolor": INK, "text.color": INK,
-    "xtick.color": MUTED, "ytick.color": MUTED, "grid.color": GRID, "axes.grid": True,
-    "axes.spines.top": False, "axes.spines.right": False, "legend.frameon": False,
-    "font.size": 10, "axes.titlesize": 12, "axes.titleweight": "bold", "lines.linewidth": 1.6,
-})
+# Chart themes; each categorical palette validated (lightness, chroma, CVD, contrast) against its own surface.
+# Dark = README figures (default). Light = the dashboard's figures (`python run.py --light` -> figures/light/).
+# Light green/yellow sit below 3:1 on white: every chart keeps a legend and the dashboard a table view (relief rule).
+THEMES = {
+    "dark": dict(surface="#1a1a19", ink="#ffffff", ink2="#c3c2b7", muted="#898781", grid="#2c2c2a", axis="#383835",
+                 series=["#3987e5", "#d95926", "#199e70", "#c98500"], ramp=["#184f95", "#3987e5", "#9ec5f4"]),
+    "light": dict(surface="#ffffff", ink="#2F3437", ink2="#55534e", muted="#787774", grid="#EFEEEB", axis="#DAD8D2",
+                  series=["#2a78d6", "#eb6834", "#1baf7a", "#eda100"], ramp=["#cde2fb", "#5598e7", "#184f95"]),
+}
+
+
+def set_theme(name: str):
+    """Point every figure's colours (module globals read at draw time) and matplotlib defaults at a theme."""
+    global SURFACE, INK, INK2, MUTED, GRID, AXIS, SERIES, RAMP
+    t = THEMES[name]
+    SURFACE, INK, INK2, MUTED, GRID, AXIS = t["surface"], t["ink"], t["ink2"], t["muted"], t["grid"], t["axis"]
+    SERIES, RAMP = t["series"], t["ramp"]
+    plt.rcParams.update({
+        "figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "savefig.facecolor": SURFACE,
+        "axes.edgecolor": AXIS, "axes.labelcolor": INK2, "axes.titlecolor": INK, "text.color": INK,
+        "xtick.color": MUTED, "ytick.color": MUTED, "grid.color": GRID, "axes.grid": True,
+        "axes.spines.top": False, "axes.spines.right": False, "legend.frameon": False,
+        "font.size": 10, "axes.titlesize": 12, "axes.titleweight": "bold", "lines.linewidth": 1.6,
+    })
+
+
+set_theme("dark")
 
 
 def excess(returns: pd.DataFrame, rf: pd.Series) -> pd.DataFrame:
@@ -218,7 +236,7 @@ def sector_streams(prices: pd.DataFrame) -> pd.DataFrame:
 def frontier_panel(ax, returns: pd.DataFrame, title: str):
     """Random cloud (sequential blue = Sharpe), capped frontier, max-Sharpe/min-var, CML, assets."""
     from matplotlib.colors import LinearSegmentedColormap
-    seq = LinearSegmentedColormap.from_list("blue", ["#184f95", "#3987e5", "#9ec5f4"])
+    seq = LinearSegmentedColormap.from_list("blue", RAMP)
     mu, cov = frontier.annualize(returns)
     cloud = frontier.random_portfolios(mu, cov, seed=data.SEED)
     sc = ax.scatter(cloud["vol"], cloud["ret"], c=cloud["sharpe"], cmap=seq, s=3, alpha=0.6, linewidths=0)
@@ -945,6 +963,9 @@ def m15() -> pd.DataFrame:
 
 
 if __name__ == "__main__":
+    if "--light" in sys.argv:  # dashboard figures; README figures stay dark
+        set_theme("light")
+        FIG = FIG / "light"
     FIG.mkdir(exist_ok=True)
     prices = data.load_prices()
     rf = data.load_rf(prices.index)

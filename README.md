@@ -712,6 +712,8 @@ streamlit run app.py
 ```
 It opens on the verdict: every hypothesis with its answer and the number behind it, followed by three tabs. **Findings** walks through the results in the order they were run, each claim with its evidence and figure. **Explore the data** re-runs the momentum, pairs, allocation and Monte Carlo code live, so every control goes through the same engine, cost model, short rate and train/test split as the write-up. **How it was tested** summarizes the safeguards. Numbers in the page's text are read from the `figures/*.md` tables that `run.py` writes, so the copy can't drift from the results, and `tests.py` checks that the Explore defaults reproduce the published Sharpe ratios.
 
+The dashboard uses light versions of the figures, generated with `python run.py --light` into `figures/light/`; the README keeps the dark set.
+
 Use it to see **how fragile each result is**, not to search for better parameters: any setting chosen after looking at the 2019+ numbers is fit on the test period and is no longer an out-of-sample result. The sidebar says so too.
 
 ## Reproduce
