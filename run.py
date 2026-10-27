@@ -16,6 +16,7 @@ import momentum
 import montecarlo as mc
 import pairs
 import significance
+import survivorship
 import walkforward
 
 FIG = Path(__file__).parent / "figures"
@@ -866,6 +867,83 @@ def m14(prices_us: pd.DataFrame, tables: dict) -> pd.DataFrame:
     return table
 
 
+def m15() -> pd.DataFrame:
+    """M15: India without hindsight. Point-in-time Nifty 50 universe vs M14's universe of today's large caps."""
+    p_in = data.load_prices_in()
+    pit = survivorship.load_pit_prices().reindex(p_in.index)  # same trading days as M14, for paired tests
+    rf = data.load_rf(p_in.index, **data.IN_RF)
+    members = survivorship.membership_matrix(survivorship.load_membership(), p_in.index)
+    stocks_in = [t for t in p_in.columns if t not in data.IN_BENCHMARKS]
+    runs = {
+        "Nifty ETF (cap-weighted)": (momentum.buy_and_hold(p_in, "NIFTYBEES"), p_in),
+        "EW Nifty 50, point-in-time": (survivorship.pit_equal_weight(pit, members), pit),
+        "EW Nifty 50, point-in-time (gaps in cash)": (survivorship.pit_equal_weight(pit, members, fill=None), pit),
+        "EW 48, hindsight (M14)": (momentum.equal_weight(p_in, stocks_in), p_in),
+        "Momentum, point-in-time": (survivorship.pit_momentum(pit, members), pit),
+        "Momentum, hindsight (M14)": (momentum.cross_sectional(p_in, stocks_in), p_in),
+    }
+    res = {k: backtest.run(w, px, IN_COST_BPS, rf) for k, (w, px) in runs.items()}
+    table = metrics_table(res, rf)
+    cov = survivorship.coverage(pit, members)
+
+    cagr = lambda r: (1 + r).prod() ** (252 / len(r)) - 1
+    tests = []
+    for a, b in [("EW Nifty 50, point-in-time", "Nifty ETF (cap-weighted)"),
+                 ("EW 48, hindsight (M14)", "EW Nifty 50, point-in-time"),
+                 ("Momentum, hindsight (M14)", "Momentum, point-in-time"),
+                 ("Momentum, point-in-time", "EW Nifty 50, point-in-time")]:
+        for period, ra, rb in zip(("train", "test"), data.split(res[a]["net"]), data.split(res[b]["net"])):
+            d, lo, hi, pv = significance.sharpe_diff(excess(ra, rf), excess(rb, rf), seed=data.SEED)
+            tests.append({"comparison": f"{a} − {b}", "period": period, "ΔCAGR": cagr(ra) - cagr(rb),
+                          "ΔSharpe": d, "95% CI low": lo, "95% CI high": hi, "p-value": pv})
+    tests = pd.DataFrame(tests)
+
+    fig, axs = plt.subplots(1, 3, figsize=(16, 5.2), gridspec_kw={"width_ratios": [1.5, 1, 1]})
+    ax = axs[0]
+    for k, c in zip(["EW 48, hindsight (M14)", "EW Nifty 50, point-in-time", "Momentum, point-in-time",
+                     "Nifty ETF (cap-weighted)"], SERIES):
+        eq = (1 + res[k]["net"]).cumprod()
+        ax.plot(eq.index, eq, color=c, label=f"{k}  {eq.iloc[-1]:.1f}x")
+    ax.set_yscale("log")
+    ax.set_yticks([1, 2, 3, 5, 10, 20], labels=["1x", "2x", "3x", "5x", "10x", "20x"])
+    ax.minorticks_off()
+    split_line(ax)
+    ax.set_ylabel("Growth of ₹1 (log, net of 20 bps)")
+    ax.set_title("M15 · India: today's winners vs the index as it actually was", loc="left")
+    ax.legend(loc="upper left", fontsize=8)
+
+    ax = axs[1]
+    show = ["EW 48, hindsight (M14)", "EW Nifty 50, point-in-time", "Momentum, hindsight (M14)",
+            "Momentum, point-in-time", "Nifty ETF (cap-weighted)"]
+    cg = table.set_index(["strategy", "period"])["CAGR (net)"]
+    y = np.arange(len(show))[::-1]
+    ax.barh(y + 0.18, [cg[(k, "train")] for k in show], height=0.34, color=SERIES[2], label="train 2010–2018")
+    ax.barh(y - 0.18, [cg[(k, "test")] for k in show], height=0.34, color=SERIES[3], label="test 2019–2026")
+    ax.set_yticks(y, [k.replace(" (M14)", "").replace("Nifty 50, ", "") for k in show])
+    ax.xaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+    ax.set_xlabel("CAGR (net)")
+    ax.set_title("Where the hindsight premium was earned", loc="left")
+    ax.legend(loc="lower right", fontsize=8)
+
+    ax = axs[2]
+    ax.bar(cov.index.astype(str), cov["coverage"], color=INK2)
+    ax.set_ylim(0.8, 1.0)
+    ax.yaxis.set_major_formatter(PercentFormatter(1.0, decimals=0))
+    ax.tick_params(axis="x", rotation=90)
+    ax.set_title("Member-days with prices", loc="left")
+    fig.tight_layout()
+    fig.savefig(FIG / "m15_survivorship.png", dpi=150)
+    plt.close(fig)
+
+    (FIG / "m15_metrics.md").write_text(to_markdown(table))
+    (FIG / "m15_coverage.md").write_text(to_markdown(cov.reset_index(names="year").astype(
+        {"year": str, "member-days": str, "with prices": str}), pct=("coverage",)))
+    (FIG / "m15_tests.md").write_text(to_markdown(tests, pct=("ΔCAGR",), digits=2))
+    print(cov.to_string())
+    print(tests.round(3).to_string(index=False))
+    return table
+
+
 if __name__ == "__main__":
     FIG.mkdir(exist_ok=True)
     prices = data.load_prices()
@@ -893,3 +971,4 @@ if __name__ == "__main__":
     print("\n== m12 ==\n", m12(prices).round(3).to_string(index=False))
     print("\n== m13 ==\n", m13(prices).round(3).to_string(index=False))
     print("\n== m14 ==\n", m14(prices, tables).round(3).to_string(index=False))
+    print("\n== m15 ==\n", m15().round(3).to_string(index=False))

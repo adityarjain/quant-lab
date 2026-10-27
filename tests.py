@@ -365,6 +365,49 @@ def test_india():
     assert 0.03 < rf.mean() * 252 < 0.10  # India's call-money rate averaged ~6–7% over 2010–2026
 
 
+def test_survivorship():
+    import survivorship as sv
+    from momentum import month_ends
+
+    # Parser: a date in a merged (rowspan) cell carries to the rows below it; link labels are used.
+    wiki = ("==Constituents==\n|[[A Co]]\n==Index changes==\n{|\n|-\n|[[Old One]]\n|[[New One]]\n"
+            "| rowspan=\"2\" |1 April 2013\n|reason\n|-\n|[[Old Two]]\n|[[New Two]]\n|-\n|[[Old Three|Old 3]]\n"
+            "|[[New Three]]\n|5 May 2014\n|}\n==Statistics==\n")
+    events, current = sv.parse_wikipedia(wiki)
+    assert current == ["A Co"]
+    assert [(str(d), a, b) for d, a, b in events] == [("2013-04-01", "Old One", "New One"),
+                                                       ("2013-04-01", "Old Two", "New Two"),
+                                                       ("2014-05-05", "Old 3", "New Three")]
+
+    # Committed membership: exactly 50 every day, and known history is right.
+    days = pd.bdate_range("2010-01-04", "2026-10-23")
+    m = sv.membership_matrix(sv.load_membership(), days)
+    assert (m.sum(axis=1) == 50).all()
+    assert m.loc["2015-06-01", "HDFC"] and not m.loc["2023-08-01", "HDFC"]        # merged into HDFC Bank, Jul 2023
+    assert not m.loc["2010-06-01", "GRASIM"] and m.loc["2012-01-02", "GRASIM"]    # out Apr 2010, back Mar 2011
+    assert m.loc["2020-01-01", "YESBANK"] and not m.loc["2020-06-01", "YESBANK"]  # dropped in the Mar 2020 crisis
+
+    # Equal weight: fully invested; a member without prices passes its 1/50 to the ETF (or to cash).
+    px = sv.load_pit_prices().reindex(days)
+    w = sv.pit_equal_weight(px, m)
+    d = pd.Timestamp("2015-06-01")
+    gaps = (m.loc[d] & px.loc[d, m.columns].isna()).sum()
+    assert np.allclose(w.sum(axis=1), 1) and np.isclose(w.loc[d, "NIFTYBEES"], gaps / 50) and w.loc[d, "HDFC"] == 0
+    assert (sv.pit_equal_weight(px, m, fill=None).sum(axis=1) <= 1 + 1e-12).all()
+
+    # Momentum: at every rebalance, every pick is a member on that date.
+    rebal = month_ends(days)
+    picks = sv.pit_momentum(px, m).reindex(rebal)[m.columns] > 0
+    assert picks.any(axis=1).loc["2012":].all() and not (picks & ~m.reindex(rebal)).any().any()
+
+    # neutralize: the event day's return becomes 0; every other day's return is unchanged.
+    raw = sv.load_pit_prices(adjust=False)
+    r0, r1 = raw["TMPV"].pct_change(), sv.neutralize(raw)["TMPV"].pct_change()
+    ev = pd.Timestamp("2025-10-14")
+    assert r0.loc[ev] < -0.35 and abs(r1.loc[ev]) < 1e-12
+    assert np.allclose(r0.drop(ev).dropna(), r1.drop(ev).dropna())
+
+
 def test_app():
     """Dashboard smoke test: runs headless, no errors, and its defaults reproduce the published
     test-period Sharpe ratios (so the UI can't silently drift from run.py)."""

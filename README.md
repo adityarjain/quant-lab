@@ -5,7 +5,7 @@
 *Momentum, pairs trading, mean-variance optimization and Monte Carlo risk on US large caps, 2010–2026, with a strict train/test split, T-bill excess returns, significance tests and backtested VaR.*
 
 ## Abstract
-We build two classic anomaly strategies, combine them with mean-variance optimization, and stress-test the result. Everything is fit on 2010–2018 and evaluated once on 2019–2026, net of 10 bps per unit of turnover, with Sharpe ratios measured in excess of 3-month T-bills. **No strategy beat a passive benchmark out of sample.** Cross-sectional 12-1 momentum earned a net Sharpe of 0.74 against 0.80 for an equal-weight portfolio of the same 48 stocks. The pairs screen found 6 cointegrated pairs out of 120, exactly the number chance predicts, and none stayed cointegrated after 2018 (test Sharpe 0.17). Mean-variance optimization put 0% in momentum, let a hand-set 40% cap decide the allocation, and lost to a naive 25%-each mix (0.52 vs 0.76): the two streams it favoured, pairs and bonds, collapsed out of sample. **Significance tests then show that none of these comparisons is statistically distinguishable from luck**: every 95% Sharpe interval spans roughly ±0.7, and every head-to-head difference has p ≥ 0.17. On risk, a static normal or historical VaR fit on the calm 2011–2018 period broke 2–6x too often after 2018. Rescaling the historical tail by current EWMA volatility (filtered historical simulation) **passes the Kupiec coverage test for all three portfolios at both 95% and 99%**. A six-factor regression (Fama-French 5 + momentum) finds **no significant alpha in any strategy out of sample**; momentum is a 0.97-beta market position with a modest momentum tilt. Estimators built to resist estimation error don't rescue the optimizer: Ledoit-Wolf and Bayes-Stein shrinkage leave its weights unchanged, and risk parity does worse still (0.38), because the problem was a regime change, not noisy estimates. Re-running the whole design at 13 yearly cutoffs (2014–2026, everything re-fit on prior data only) turns one 7.8-year test into a 12.8-year out-of-sample record: confidence intervals shrink by about a quarter, the pairs book's Sharpe falls to 0.01, and still no difference between strategies is significant. Transplanted to 48 Indian large caps (Indian costs, Indian short rate), the design fails the same way: momentum's in-sample Sharpe of 1.18 falls to 0.35, and pairs that stay cointegrated still lose money after Indian costs. The project's only statistically significant result, equal-weight beating the Nifty ETF (p = 0.02), is the one most exposed to survivorship bias. The lesson is about process: in-sample numbers were convincing everywhere, and only an out-of-sample split, honest costs and formal inference exposed which ones were real.
+We build two classic anomaly strategies, combine them with mean-variance optimization, and stress-test the result. Everything is fit on 2010–2018 and evaluated once on 2019–2026, net of 10 bps per unit of turnover, with Sharpe ratios measured in excess of 3-month T-bills. **No strategy beat a passive benchmark out of sample.** Cross-sectional 12-1 momentum earned a net Sharpe of 0.74 against 0.80 for an equal-weight portfolio of the same 48 stocks. The pairs screen found 6 cointegrated pairs out of 120, exactly the number chance predicts, and none stayed cointegrated after 2018 (test Sharpe 0.17). Mean-variance optimization put 0% in momentum, let a hand-set 40% cap decide the allocation, and lost to a naive 25%-each mix (0.52 vs 0.76): the two streams it favoured, pairs and bonds, collapsed out of sample. **Significance tests then show that none of these comparisons is statistically distinguishable from luck**: every 95% Sharpe interval spans roughly ±0.7, and every head-to-head difference has p ≥ 0.17. On risk, a static normal or historical VaR fit on the calm 2011–2018 period broke 2–6x too often after 2018. Rescaling the historical tail by current EWMA volatility (filtered historical simulation) **passes the Kupiec coverage test for all three portfolios at both 95% and 99%**. A six-factor regression (Fama-French 5 + momentum) finds **no significant alpha in any strategy out of sample**; momentum is a 0.97-beta market position with a modest momentum tilt. Estimators built to resist estimation error don't rescue the optimizer: Ledoit-Wolf and Bayes-Stein shrinkage leave its weights unchanged, and risk parity does worse still (0.38), because the problem was a regime change, not noisy estimates. Re-running the whole design at 13 yearly cutoffs (2014–2026, everything re-fit on prior data only) turns one 7.8-year test into a 12.8-year out-of-sample record: confidence intervals shrink by about a quarter, the pairs book's Sharpe falls to 0.01, and still no difference between strategies is significant. Transplanted to 48 Indian large caps (Indian costs, Indian short rate), the design fails the same way: momentum's in-sample Sharpe of 1.18 falls to 0.35, and pairs that stay cointegrated still lose money after Indian costs. The project's only statistically significant result, equal-weight beating the Nifty ETF (p = 0.02), turns out to be survivorship bias: rebuilt on the Nifty 50's actual point-in-time membership, the gap shrinks to p = 0.09, while hindsight in the universe is worth a significant 8.6% a year in train and explains half of Indian momentum's in-sample return. The lesson is about process: in-sample numbers were convincing everywhere, and only an out-of-sample split, honest costs and formal inference exposed which ones were real.
 
 ## Hypothesis
 Momentum and pairs trading are among the most documented anomalies in equities. We test whether they survive realistic transaction costs **out-of-sample**, and whether combining them with mean-variance optimization improves risk-adjusted returns and tail risk versus any single strategy or buy-and-hold.
@@ -33,6 +33,7 @@ Momentum and pairs trading are among the most documented anomalies in equities. 
 | Any strategy has alpha beyond known factors | **No.** Largest test-period \|t(alpha)\| is 0.92 (M11). The only significant alpha (pairs, train, t = 2.1) is in-sample. |
 | Robust estimators fix the optimizer | **No.** Shrinkage leaves the weights unchanged; risk parity does worse (0.38 vs 0.76, M12). |
 | The conclusions transfer to India | **Yes, and the problems get worse.** Higher costs and a 5–7% short-rate hurdle; in-sample momentum collapses out of sample (M14). |
+| Survivorship bias drives the India results | **Yes.** With point-in-time Nifty 50 membership, EW vs the index is no longer significant (p = 0.09) and in-sample momentum drops from 28.3% to 13.0% a year (M15). |
 | The conclusions survive other cutoffs | **Yes, and still none is significant.** Over 13 yearly out-of-sample periods the ranking holds; the differences shrink (p = 0.27–0.66, M13). |
 
 Generated by `run.py` as `figures/summary.md`.
@@ -45,6 +46,7 @@ Generated by `run.py` as `figures/summary.md`.
 | Risk-free | 3-month T-bill (FRED `DTB3`), forward-filled to trading days, ÷ 252 per day. Averaged 0.40% p.a. in train, 2.75% in test (peak 5.36%, Oct 2023) |
 | Factors | Fama-French 5 + momentum, daily (Kenneth French data library), cached in `data/ff.parquet`. Ends 2026-08-31, so factor regressions cover the test period to that date (1,926 days) |
 | India (M14) | 48 NSE large caps (8 sectors × 6) + NIFTYBEES (Nifty 50 ETF) + GOLDBEES (gold ETF, in the bond slot), 2010-02-01 → 2026-10-23, `data/prices_in.parquet`; short rate = India interbank call money (OECD/FRED `IRSTCI01INM156N`, monthly): 7.45% p.a. in train, 5.62% in test |
+| India point-in-time (M15) | Nifty 50 membership on every date 2010–2026, rebuilt from today's list by undoing the 51 index changes in Wikipedia's NIFTY 50 change log (which cites NSE press releases), `data/nifty50_membership.csv`; prices for all 96 tickers ever in the index, `data/prices_pit.parquet`; 95.4% of member-days have prices |
 | Period | 2010-01-04 → 2026-10-06 (download dates in `data/meta.json`, `data/meta_rf.json`, `data/meta_ff.json`) |
 | Train | 2010-01-04 → 2018-12-31 (2,264 days): all parameters, pair selection, hedge ratios and optimizer weights fit here |
 | Test | 2019-01-02 → 2026-10-06 (1,951 days): evaluated once, never tuned on |
@@ -199,6 +201,16 @@ The same M1–M3 design, unchanged, on an Indian universe built the same way: 8 
 - **Data repair.** Yahoo's NSE data needed fixing where the US data didn't. GOLDBEES and NIFTYBEES printed at 1/100 and 1/10 of their price for two days in December 2019. A spike filter removes moves of more than 3x that snap back within 5 days (it removed exactly those 4 prints); real crashes don't snap back and are kept. GRASIM had no history, and Vedanta's 2026 demerger printed as a −65% day, so both were replaced (by Ambuja Cements and SAIL). The sample starts 2010-02-01 because some January-2010 prints are stale. Every remaining move above 12% was checked against a real event (COVID, the 4 June 2024 election result, fuel-subsidy shocks to oil marketers).
 
 ![M14 India](figures/m14_india.png)
+
+### M15 · India without hindsight (`survivorship.py`)
+M14's universe was *today's* Indian large caps. A list drawn up in 2026 knows which companies grew, which shrank, and which disappeared, and a backtest on it inherits that knowledge. M15 replaces it with the universe an investor could actually have known about: **the Nifty 50 as it stood on each date.**
+
+1. **Membership.** Start from today's 50 constituents and undo every index change since 2010 in reverse: put the excluded name back in, take the included one out. This is self-checking. The reconstruction must have exactly 50 members after every one of the 51 changes, every added name must have been a member, and every removed name must not have been; any parsing or name-mapping mistake breaks it. It holds on every trading day.
+2. **Prices** for all 96 tickers that were ever members. Yahoo's batch download silently drops some names (GRASIM), so sparse ones are re-fetched one by one. **Yahoo has deleted the histories of 8 former members**: HDFC Ltd, Ranbaxy, Cairn India, IDFC, Sterlite, JP Associates, Reliance Capital and LTIMindtree. Those are precisely the merged and failed companies a survivorship-free test needs. They make up 4.6% of member-days (14% in 2010, falling to 0% by 2025). Their weight goes to the Nifty ETF, so a missing name contributes the index's return: no hindsight gain or loss. A variant that puts it in cash bounds the effect.
+3. **Corporate actions.** Every member-day move above 20% was reviewed. Two are unadjusted corporate actions and are neutralized (that day's return set to zero): Tata Motors' October 2025 demerger, printed as −40%, and Trent's −33% on 2026-01-01, consistent with an unadjusted bonus issue. The rest are real: Yes Bank's collapse, the January 2023 Adani selloff, IndusInd Bank's 2025 accounting shock.
+4. **Strategies**, all at M14's 20 bps and call-money rate. *EW point-in-time*: 1/50 in every member on each date, re-weighted when membership changes. *Momentum point-in-time*: the M1 12-1 rule, ranking only the stocks that are members at each month end.
+
+![M15 survivorship](figures/m15_survivorship.png)
 
 ## Results
 
@@ -520,6 +532,54 @@ Train-fitted max-Sharpe weights: Momentum 40%, Pairs 40%, Nifty 0%, Gold 20%.
 | Equal-weight 4 − Max-Sharpe (train fit) | 0.12 | -0.09 | 0.33 | 0.27 |
 | Equal-weight 48 − Buy & hold Nifty | 0.30 | 0.05 | 0.56 | 0.02 |
 
+### M15 · Hindsight vs point-in-time (India, net of 20 bps, Sharpe over call money)
+| strategy | period | Sharpe (gross) | Sharpe (net) | CAGR (net) | vol | maxDD | turnover/yr |
+|---|---|---|---|---|---|---|---|
+| Nifty ETF (cap-weighted) | train | 0.19 | 0.19 | 9.7% | 17.6% | -27.3% | 0.11 |
+| Nifty ETF (cap-weighted) | test | 0.40 | 0.40 | 11.3% | 15.5% | -36.3% | 0.00 |
+| EW Nifty 50, point-in-time | train | 0.21 | 0.21 | 10.0% | 15.9% | -26.8% | 0.27 |
+| EW Nifty 50, point-in-time | test | 0.57 | 0.57 | 15.0% | 17.3% | -38.8% | 0.09 |
+| EW Nifty 50, point-in-time (gaps in cash) | train | 0.22 | 0.22 | 10.0% | 14.7% | -23.2% | 0.24 |
+| EW Nifty 50, point-in-time (gaps in cash) | test | 0.57 | 0.57 | 14.9% | 17.1% | -38.2% | 0.09 |
+| EW 48, hindsight (M14) | train | 0.74 | 0.73 | 18.6% | 14.5% | -21.6% | 0.11 |
+| EW 48, hindsight (M14) | test | 0.70 | 0.70 | 17.6% | 17.1% | -35.8% | 0.00 |
+| Momentum, point-in-time | train | 0.45 | 0.38 | 13.0% | 16.0% | -21.6% | 5.52 |
+| Momentum, point-in-time | test | 0.41 | 0.35 | 11.3% | 20.5% | -36.3% | 5.80 |
+| Momentum, hindsight (M14) | train | 1.24 | 1.18 | 28.3% | 15.9% | -19.4% | 4.69 |
+| Momentum, hindsight (M14) | test | 0.40 | 0.35 | 11.4% | 21.6% | -37.3% | 5.69 |
+
+| comparison | period | ΔCAGR | ΔSharpe | 95% CI low | 95% CI high | p-value |
+|---|---|---|---|---|---|---|
+| EW Nifty 50, point-in-time − Nifty ETF (cap-weighted) | train | 0.3% | 0.02 | -0.19 | 0.24 | 0.91 |
+| EW Nifty 50, point-in-time − Nifty ETF (cap-weighted) | test | 3.8% | 0.17 | -0.03 | 0.39 | 0.09 |
+| EW 48, hindsight (M14) − EW Nifty 50, point-in-time | train | 8.6% | 0.52 | 0.36 | 0.69 | 0.00 |
+| EW 48, hindsight (M14) − EW Nifty 50, point-in-time | test | 2.6% | 0.13 | -0.02 | 0.29 | 0.09 |
+| Momentum, hindsight (M14) − Momentum, point-in-time | train | 15.3% | 0.80 | 0.49 | 1.12 | 0.00 |
+| Momentum, hindsight (M14) − Momentum, point-in-time | test | 0.1% | -0.00 | -0.27 | 0.27 | 0.99 |
+| Momentum, point-in-time − EW Nifty 50, point-in-time | train | 3.0% | 0.17 | -0.36 | 0.66 | 0.50 |
+| Momentum, point-in-time − EW Nifty 50, point-in-time | test | -3.8% | -0.22 | -0.66 | 0.19 | 0.29 |
+
+### M15 · Price coverage of Nifty 50 member-days
+| year | member-days | with prices | coverage | missing names |
+|---|---|---|---|---|
+| 2010 | 11600 | 9976 | 86.0% | CAIRN, HDFC, IDFC, JPASSOCIAT, RANBAXY, RELCAPITAL, STER |
+| 2011 | 12300 | 10633 | 86.4% | CAIRN, HDFC, IDFC, JPASSOCIAT, RANBAXY, RELCAPITAL, STER |
+| 2012 | 12250 | 10840 | 88.5% | CAIRN, HDFC, IDFC, JPASSOCIAT, RANBAXY, STER |
+| 2013 | 12400 | 11160 | 90.0% | CAIRN, HDFC, IDFC, JPASSOCIAT, RANBAXY |
+| 2014 | 12200 | 11348 | 93.0% | CAIRN, HDFC, IDFC, JPASSOCIAT, RANBAXY |
+| 2015 | 12350 | 11756 | 95.2% | CAIRN, HDFC, IDFC |
+| 2016 | 12300 | 11993 | 97.5% | CAIRN, HDFC |
+| 2017 | 12400 | 12152 | 98.0% | HDFC |
+| 2018 | 12300 | 12054 | 98.0% | HDFC |
+| 2019 | 12150 | 11907 | 98.0% | HDFC |
+| 2020 | 12550 | 12299 | 98.0% | HDFC |
+| 2021 | 12400 | 12152 | 98.0% | HDFC |
+| 2022 | 12400 | 12152 | 98.0% | HDFC |
+| 2023 | 12250 | 12005 | 98.0% | HDFC, LTIM |
+| 2024 | 12300 | 12117 | 98.5% | LTIM |
+| 2025 | 12450 | 12450 | 100.0% | – |
+| 2026 | 10000 | 10000 | 100.0% | – |
+
 ## What failed
 
 **M1: momentum did not beat its own universe.** Cross-sectional momentum had a lower Sharpe than simply holding all 48 stocks equally, in both train (0.48 vs 0.88) and test (0.74 vs 0.80). It took on more volatility (22% vs 18% in test) without enough extra return to pay for it. Costs were *not* the reason: at about 5x annual turnover, 10 bps costs only about 0.03 Sharpe. The signal itself added little, which is consistent with momentum being a crowded, well-known anomaly, and with 48 mega-caps being too narrow a cross-section for ranking to matter much. (M8: the test-period gap of −0.06 is far from significant, p = 0.79.)
@@ -574,14 +634,22 @@ Train-fitted max-Sharpe weights: Momentum 40%, Pairs 40%, Nifty 0%, Gold 20%.
 
 **M14: Indian momentum looked like the best strategy in the project, in sample.** Over 2010–2018, cross-sectional momentum on the 48 NSE names earned 28.3% a year with a Sharpe of 1.18, far above equal-weight (0.73) and the Nifty ETF (0.19). Out of sample it fell to 0.35, half of equal-weight's 0.70 (difference −0.36, p = 0.10). Part of the in-sample number is the momentum premium that is well documented in India. Part is the universe: a list of *today's* large caps is a list of stocks that went up, and momentum, which buys whatever has gone up most, gets the most out of that hindsight. Bajaj Finance, Eicher Motors and Divi's Labs are in the universe because they became large caps after rising many-fold, exactly the stocks a 2010–2018 momentum strategy would have held.
 
-**M14: the one significant result is the one most likely to be an artifact.** Equal-weight 48 beat the Nifty ETF by 0.30 Sharpe out of sample (95% CI 0.05 to 0.56, p = 0.02). That's the first difference in the project that clears 5%. But the hindsight universe beat its own index by **8.9 points a year in train** (18.6% vs 9.7% CAGR) against about 1 point in the US (12.4% vs 11.4%). A portfolio of the companies that turned out to be India's winners beating the index that also held the losers is survivorship bias, not a strategy. In a market where the large-cap list turned over much faster than the US's, this bias is larger, and it shows. A survivorship-free Indian universe (Nifty 50 constituents as of each date) is the obvious next test.
+**M14: the one significant result is the one most likely to be an artifact (confirmed in M15).** Equal-weight 48 beat the Nifty ETF by 0.30 Sharpe out of sample (95% CI 0.05 to 0.56, p = 0.02). That's the first difference in the project that clears 5%. But the hindsight universe beat its own index by **8.9 points a year in train** (18.6% vs 9.7% CAGR) against about 1 point in the US (12.4% vs 11.4%). A portfolio of the companies that turned out to be India's winners beating the index that also held the losers is survivorship bias, not a strategy. In a market where the large-cap list turned over much faster than the US's, this bias is larger, and it shows. M15 runs the obvious next test, a point-in-time Nifty 50 universe, and confirms it.
 
 **M14: Indian pairs are more cointegrated and still lose money.** India's screen found 18 pairs cointegrated at 5%, three times what chance predicts (US: exactly chance). One selected pair, Kotak Bank / Bajaj Finance, was still strongly cointegrated out of sample (p = 0.000), and Tata Steel / Hindalco nearly so (p = 0.07). The statistical relationship was more real than in the US. It didn't matter. The pairs book traded about 9x its capital a year, and at 20 bps that costs ~1.9% a year. Gross test Sharpe 0.11 became **−0.29** net. Pairs break even at about 5 bps in India and about 20 bps in the US. With 0.1% STT on every delivery sell, this strategy has no room to exist for an Indian retail trader.
 
 **M14: the hurdle rate matters as much as the strategy.** Measured over India's 5.6% call-money rate, the Nifty ETF's 11.3% a year is a Sharpe of only 0.40, half of SPY's 0.80 over 2.75% T-bills. The 50/200 MA rule, which sits in cash much of the time, earns almost exactly the call-money rate (Sharpe 0.07 test, −0.07 train). The optimizer put 40% in momentum and 40% in pairs, the two best in-sample performers (train Sharpe 1.18 and 1.10), 20% in gold and 0% in the market. Both favourites collapsed out of sample (0.35 and −0.29). The portfolio still edged its US counterpart (0.54 vs 0.52), but only thanks to the asset it held purely as a diversifier: gold had a train Sharpe of −0.01 and then returned 20.4% a year in 2019–2026 (Sharpe 0.83). That's luck, not skill, and 1/N still beat it (p = 0.27).
 
+**M15: the project's one significant result was survivorship bias.** M14 found equal-weight beating the Nifty ETF by 0.30 Sharpe out of sample (p = 0.02). Equal-weighting the companies that were *actually* in the Nifty 50 on each date gives a much smaller edge: +0.17 Sharpe out of sample (p = 0.09, not significant) and only +0.3% a year in train (p = 0.91). The rest of M14's gap came from knowing, in 2026, which companies would be India's large caps.
+
+**M15: hindsight in the universe is worth 8.6% a year, and that one is significant.** Over 2010–2018, an equal-weight portfolio of today's 48 large caps beat an equal-weight portfolio of the actual Nifty 50 by **8.6% a year** (Sharpe +0.52, 95% CI 0.36 to 0.69, p < 0.001). It is the largest and most statistically solid effect anywhere in this project, and it is a pure artefact of how the universe was chosen. Out of sample the premium shrinks to 2.6% a year (p = 0.09), because the 2019–2026 hindsight list still benefits from knowing who would grow by 2026.
+
+**M15: Indian momentum's in-sample record was half hindsight.** M14's momentum earned 28.3% a year in train, with a Sharpe of 1.18. Ranking only stocks that were actually in the index, the same rule earned **13.0%** (Sharpe 0.38). The 15.3-point gap is significant (p < 0.001). Momentum is where hindsight bias hurts most: it buys whatever has risen most, and a list of today's large caps is, by construction, a list of the stocks that rose most. Out of sample the two versions are identical (Sharpe 0.35 vs 0.35), and point-in-time momentum does not beat point-in-time equal-weight in either period (p = 0.50 train, 0.29 test).
+
+**M15: the missing 4.6% doesn't drive the answer.** Filling the member-days without prices with the index return or with cash gives the same Sharpe to two decimals (0.21 vs 0.22 train, 0.57 vs 0.57 test). The bias that remains, the 8 deleted companies' own returns, is small next to the effects measured here, and its direction is unclear: HDFC Ltd's 2023 exit was a share-swap merger into HDFC Bank, while JP Associates and Reliance Capital collapsed.
+
 ## Limitations
-- **Survivorship bias.** The universe is today's large caps, chosen with hindsight; firms that failed or shrank since 2010 are absent. This flatters every long-only result.
+- **Survivorship bias.** The US universe (and M14's Indian one) is today's large caps, chosen with hindsight. M15 measures what that is worth in India: 8.6% a year in train for equal-weight, 15.3% for momentum. The US equivalent is likely smaller (the US hindsight list beat SPY by only ~1 pt/yr in train, vs ~9 for India) but is not measured: a point-in-time US universe needs delisted-stock prices that free data doesn't have (CRSP or Norgate would).
 - **Multiple testing.** The pair screen runs 120 hypothesis tests at 5% without a Bonferroni/BH correction; the M2 results show why this matters. M8's Deflated Sharpe uses N = 8, the strategies in the verdict table, which understates the true number of choices made (120 pairs scanned, two momentum variants, several allocations), so the DSRs reported are, if anything, optimistic.
 - **Shorting costs.** Pairs' short legs pay no borrow fee, and short-sale proceeds earn no rebate. For these mega-caps borrow is cheap, but not free.
 - **Risk-free rate.** The 3-month T-bill yield (discount basis) is used as a daily rate ÷ 252; the gap to an investment-yield convention is a few basis points.
@@ -596,8 +664,8 @@ Each item comes from a specific failure above. All of them would need to be fit 
 - **Pair monitoring (M2).** Drop a pair when its rolling cointegration p-value fails, rather than relying on z-score stops; correct the screen for multiple testing (Benjamini–Hochberg).
 - **Regime-aware allocation (M12).** Shrinkage and risk parity both assume the train regime persists. Volatility targeting, or covariances estimated from the M9 EWMA model, would let the allocation react when bond-equity correlations flip, as they did in 2022.
 - **Better volatility models (M9).** GARCH(1,1) or a faster-reacting EWMA to reduce the clustering left in the max-Sharpe portfolio's 99% breaches.
-- **Broader momentum (M1).** A larger universe (S&P 500 constituents *as of each date*, which also removes survivorship bias) and a long-short version to separate the momentum premium from market beta.
-- **Survivorship-free India (M14).** Rebuild the Indian universe from Nifty 50 constituents as of each date; M14's one significant result most likely depends on this bias.
+- **Broader momentum (M1).** A larger universe and a long-short version to separate the momentum premium from market beta.
+- **Survivorship-free US (M15).** Repeat M15 for the US with point-in-time S&P 500 or Dow membership; it needs a source for delisted prices (CRSP, Norgate). For India, NSE's daily bhavcopy archives include delisted stocks and would close M15's remaining 4.6% gap.
 
 ## References
 - Jegadeesh, N. & Titman, S. (1993). Returns to buying winners and selling losers. *Journal of Finance*, 48(1).
@@ -632,6 +700,7 @@ Each item comes from a specific failure above. All of them would need to be fit 
 | `montecarlo.py` | normal and block-bootstrap simulation, VaR/CVaR, drawdowns; EWMA/FHS VaR and Kupiec/Christoffersen tests |
 | `significance.py` | Sharpe confidence intervals, paired difference tests, PSR, Deflated Sharpe (M8) |
 | `walkforward.py` | re-runs the full design at every yearly cutoff and stitches the out-of-sample years (M13) |
+| `survivorship.py` | point-in-time Nifty 50 membership (rebuilt and self-checked from the index change log), prices for every past member, EW and momentum without hindsight (M15) |
 | `run.py` | regenerates every figure and table in `figures/` |
 | `app.py` | interactive Streamlit dashboard over the same modules (UI only, no logic of its own) |
 | `tests.py` | one assert-based check per module (look-ahead, closed forms, synthetic data, test calibration) + a headless dashboard check |
