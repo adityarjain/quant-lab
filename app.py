@@ -1,4 +1,4 @@
-"""M6 interactive dashboard. Run: streamlit run app.py
+"""Quant Lab dashboard (M6). Run: streamlit run app.py
 
 UI only: every number comes from the same tested modules run.py uses. Defaults = the research
 settings in the README, so the dashboard opens on exactly the published results.
@@ -18,7 +18,7 @@ import montecarlo as mc
 import pairs
 from run import COST_BPS, MUTED, SERIES, excess, metrics_table, sector_streams, strategy_streams
 
-st.set_page_config(page_title="Quant Portfolio Lab", layout="wide")
+st.set_page_config(page_title="Quant Lab", layout="wide", initial_sidebar_state="collapsed")
 SPLIT = pd.Timestamp(data.SPLIT)
 PCT_COLS = ("CAGR (net)", "vol", "maxDD")
 
@@ -71,40 +71,254 @@ def equity_curves(results: dict, key: str = "net") -> dict:
     return {k: (1 + r[key]).cumprod() for k, r in results.items()}
 
 
+FIG = Path(__file__).parent / "figures"
+REPO = "https://github.com/adityarjain/quant-portfolio-lab"
+
+# Graphite = the research figures' own surface, so the PNGs sit in the page instead of as dark boxes.
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Public+Sans:wght@400;500;600&display=swap');
+:root { --ink:#ECEAE4; --ink2:#B7B4AA; --muted:#8A877F; --rule:#34332F; --blue:#3987e5; }
+html, body, [data-testid="stAppViewContainer"], .stMarkdown, p, li, label, button, input, textarea {
+  font-family: 'Public Sans', system-ui, sans-serif; font-feature-settings: "tnum" 1; }
+[data-testid="stMainBlockContainer"], .block-container { max-width: 1180px; padding-top: 2.75rem; padding-bottom: 5rem; }
+[data-testid="stHeader"] { background: transparent; }
+h1, h2, h3, .ql-serif { font-family: 'Newsreader', Georgia, serif !important; font-weight: 500 !important; letter-spacing: -0.005em; }
+a { color: var(--blue); }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+.ql-mark { font-family: 'Newsreader', Georgia, serif; font-size: 1.25rem; color: var(--ink2); margin: 0; }
+.ql-hero { font-family: 'Newsreader', Georgia, serif; font-weight: 500; color: var(--ink);
+  font-size: clamp(2.4rem, 5.2vw, 4.25rem); line-height: 1.04; letter-spacing: -0.02em; max-width: 19ch; margin: .5rem 0 1.25rem; }
+.ql-dek { font-size: 1.125rem; line-height: 1.6; color: var(--ink2); max-width: 64ch; margin: 0 0 .75rem; }
+.ql-links { font-size: .95rem; color: var(--muted); margin-bottom: 2.75rem; }
+
+.ql-ledger { border-top: 1px solid var(--rule); margin: 0 0 3rem; }
+.ql-row { display: grid; grid-template-columns: minmax(0, 1.25fr) 7.5rem minmax(0, 1.9fr); gap: 1.5rem;
+  padding: 1.05rem 0; border-bottom: 1px solid var(--rule); align-items: baseline; }
+.ql-q { color: var(--ink); font-size: 1rem; line-height: 1.45; }
+.ql-a { font-family: 'Newsreader', Georgia, serif; font-size: 1.65rem; line-height: 1; color: var(--ink); }
+.ql-e { color: var(--ink2); font-size: .95rem; line-height: 1.5; max-width: 60ch; }
+.ql-ledger-note { color: var(--muted); font-size: .85rem; margin: -2.25rem 0 3rem; }
+
+.ql-chapter { font-family: 'Newsreader', Georgia, serif; font-size: 2rem; color: var(--ink); margin: 3.25rem 0 .25rem; }
+.ql-chapter-dek { color: var(--muted); font-size: 1rem; max-width: 60ch; margin-bottom: 1.25rem; }
+.ql-tag { color: var(--muted); font-size: .85rem; margin: 1.5rem 0 .2rem; }
+.ql-claim { font-family: 'Newsreader', Georgia, serif; font-size: 1.6rem; line-height: 1.2; color: var(--ink); margin: 0 0 .75rem; max-width: 26ch; }
+.ql-body { color: var(--ink2); font-size: 1rem; line-height: 1.65; max-width: 60ch; }
+.ql-body b { color: var(--ink); font-weight: 600; }
+
+.ql-table { border-collapse: collapse; width: 100%; font-size: .875rem; }
+.ql-table th { text-align: left; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--rule); padding: .45rem .6rem; }
+.ql-table td { color: var(--ink2); border-bottom: 1px solid #2a2a27; padding: .4rem .6rem; }
+
+.ql-check { color: var(--ink2); font-size: 1rem; line-height: 1.7; max-width: 68ch; }
+.ql-check b { color: var(--ink); }
+.ql-foot { color: var(--muted); font-size: .85rem; margin-top: 4rem; border-top: 1px solid var(--rule); padding-top: 1rem; }
+[data-baseweb="tab-list"] { gap: 1.75rem; }
+[data-baseweb="tab"] p { font-size: 1.02rem; }
+@media (max-width: 760px) {
+  .ql-row { grid-template-columns: 1fr; gap: .35rem; }
+  .ql-a { font-size: 1.35rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+""", unsafe_allow_html=True)
+
+
+@st.cache_data
+def md(name: str) -> pd.DataFrame:
+    """A results table written by run.py, as strings exactly as published."""
+    lines = (FIG / f"{name}.md").read_text().strip().splitlines()
+    cells = lambda l: [c.strip() for c in l.strip().strip("|").split("|")]
+    return pd.DataFrame([cells(l) for l in lines[2:]], columns=cells(lines[0]))
+
+
+def cell(name: str, col: str, **match) -> str:
+    """One published number, looked up by row values (keys use underscores for spaces)."""
+    df = md(name)
+    for k, v in match.items():
+        df = df[df[k.replace("_", " ")] == v]
+    return df.iloc[0][col]
+
+
+def html_table(name: str, cols: list[str] | None = None) -> str:
+    df = md(name)
+    return (df[cols] if cols else df).to_html(index=False, classes="ql-table", border=0, escape=True)
+
+
+def finding(tag: str, claim: str, body: str, figure: str, table: str | None = None, cols=None):
+    left, right = st.columns([2, 3], gap="large")
+    with left:
+        st.markdown(f'<p class="ql-tag">{tag}</p><h3 class="ql-claim">{claim}</h3><p class="ql-body">{body}</p>',
+                    unsafe_allow_html=True)
+        if table:
+            with st.expander("Show the numbers"):
+                st.markdown(html_table(table, cols), unsafe_allow_html=True)
+    with right:
+        st.image(str(FIG / f"{figure}.png"), width="stretch")
+
+
+def chapter(title: str, dek: str):
+    st.markdown(f'<h2 class="ql-chapter">{title}</h2><p class="ql-chapter-dek">{dek}</p>', unsafe_allow_html=True)
+
+
 prices = load_prices()
 rf = load_rf()
 stocks = [t for t in prices.columns if t not in data.BENCHMARKS]
 
-st.title("Quant Portfolio Lab")
-st.caption("Momentum, pairs, mean-variance and Monte Carlo on 48 US large caps + SPY + BND. "
-           f"Train {prices.index[0].date()} → 2018-12-31, test {data.SPLIT} → {prices.index[-1].date()}. "
-           "Dashed line in every chart = train | test split.")
-with st.sidebar:
-    st.header("Settings")
-    cost = st.slider("Transaction cost (bps per unit turnover)", 0, 50, COST_BPS)
-    st.warning("Defaults are the research settings from the README. A parameter chosen *after* looking at "
-               "2019+ results is fit on the test period, so those numbers are no longer out-of-sample.")
+# ---------------------------------------------------------------- hero + verdict ledger
+st.markdown(f"""
+<p class="ql-mark">Quant Lab</p>
+<h1 class="ql-hero">Four classic quant strategies, tested honestly. None beat the index.</h1>
+<p class="ql-dek">Momentum, trend-following, pairs trading and portfolio optimization, built from scratch and tested on
+US and Indian stocks from 2010 to 2026. Every result is out of sample, after trading costs, and measured against the
+short-term interest rate.</p>
+<p class="ql-links"><a href="{REPO}" target="_blank">Code and the full research write-up on GitHub</a></p>
+""", unsafe_allow_html=True)
 
-tabs = st.tabs(["Verdict", "M1 · Momentum", "M2 · Pairs", "M3 · Frontier", "M4 · Monte Carlo"])
+have_results = (FIG / "summary.md").exists()
+if have_results:
+    t1 = lambda s: cell("m1_metrics", "Sharpe (net)", strategy=s, period="test")
+    p13 = md("m13_differences")["p-value"].astype(float)
+    alpha_t = md("m11_factors").query("period == 'test'")["t(alpha)"].astype(float).abs().max()
+    m9 = md("m9_var_backtest")
+    pct = lambda s: s.str.rstrip("%").astype(float)
+    fhs = pct(m9[m9["model"] == "EWMA filtered historical"]["breach99"])
+    static = pct(m9[m9["model"].str.startswith("Static")]["breach99"])
+    rows = [
+        ("Does momentum beat simply owning the same stocks?", "No",
+         f"Sharpe {t1('XS momentum 12-1')} against {t1('Equal-weight 48')} for holding all 48 equally, 2019–2026."),
+        ("Does pairs trading survive costs?", "No",
+         "The cointegration screen found exactly as many pairs as chance predicts. Out-of-sample Sharpe "
+         f"{cell('m2_metrics', 'Sharpe (net)', strategy='Pairs portfolio (5)', period='test')}."),
+        ("Does optimizing the mix beat splitting money evenly?", "No",
+         f"Max-Sharpe {cell('m3_metrics', 'Sharpe (net)', strategy='Max-Sharpe (train fit)', period='test')} against "
+         f"{cell('m3_metrics', 'Sharpe (net)', strategy='Equal-weight 4', period='test')} for 25% each. "
+         "Shrinkage and risk parity didn't help."),
+        ("Is any difference between strategies real?", "Not shown",
+         f"Every head-to-head test has p = {p13.min():.2f}–{p13.max():.2f}, even over 12.8 years of out-of-sample data."),
+        ("Is there alpha beyond the standard factors?", "No",
+         f"After Fama-French 5 + momentum, the largest out-of-sample |t(alpha)| is {alpha_t:.2f}."),
+        ("Can a risk model survive the post-2018 regime?", "Yes, one",
+         f"Volatility-scaled historical VaR broke its 99% limit on {fhs.min():.1f}–{fhs.max():.1f}% of days "
+         f"(target 1%). Static models: {static.min():.1f}–{static.max():.1f}%."),
+        ("Does any of it work in India?", "No",
+         f"Indian momentum: Sharpe {cell('m14_metrics', 'Sharpe (net)', strategy='XS momentum 12-1', period='train')} "
+         f"in sample, {cell('m14_metrics', 'Sharpe (net)', strategy='XS momentum 12-1', period='test')} out of sample."),
+        ("Was the one significant result real?", "No",
+         "Equal-weighting today's Indian large caps beat the index as it actually stood by "
+         f"{cell('m15_tests', 'ΔCAGR', comparison='EW 48, hindsight (M14) − EW Nifty 50, point-in-time', period='train')}"
+         " a year in sample. That is survivorship bias, not a strategy."),
+    ]
+    st.markdown('<div class="ql-ledger">' + "".join(
+        f'<div class="ql-row"><div class="ql-q">{q}</div><div class="ql-a">{a}</div><div class="ql-e">{e}</div></div>'
+        for q, a, e in rows) + "</div>", unsafe_allow_html=True)
+    st.markdown('<p class="ql-ledger-note">Sharpe ratios are annualized, net of costs, over the local short rate. '
+                'Train 2010–2018, test 2019–2026.</p>', unsafe_allow_html=True)
+else:
+    st.info("Results not generated yet. Run `python run.py` once to build them; the Explore tab works without it.")
 
-# ---------------------------------------------------------------- Verdict
-with tabs[0]:
-    st.subheader("Out-of-sample verdict (research defaults, test 2019+, net of 10 bps, Sharpe over T-bills)")
-    summary = Path(__file__).parent / "figures" / "summary.md"
-    if summary.exists():
-        st.markdown(summary.read_text())
+outer = st.tabs(["Findings", "Explore the data", "How it was tested"])
+
+# ---------------------------------------------------------------- findings
+with outer[0]:
+    if have_results:
+        chapter("The strategies", "Each was fit on 2010–2018 with textbook parameters, then run once on 2019–2026.")
+        finding("M1, momentum", "Momentum didn't beat simply owning everything.",
+                f"Buying the strongest 10 of 48 large caps each month earned a Sharpe of <b>{t1('XS momentum 12-1')}</b> "
+                f"out of sample, against <b>{t1('Equal-weight 48')}</b> for holding all 48. Costs weren't the problem; "
+                "the signal added risk without enough return. The 50/200-day trend rule did worse still: it sat "
+                "through the 2020 crash and then missed the rebound.", "m1_momentum", "m1_metrics")
+        finding("M2, pairs trading", "The pairs that looked linked were chance.",
+                "Of 120 same-sector pairs, 6 passed a cointegration test at 5%, exactly what pure noise produces. "
+                "None of the 5 chosen pairs was still cointegrated after 2018, and the most correlated pairs were "
+                "almost never cointegrated at all.", "m2_corr_vs_coint", "m2_pairs")
+
+        chapter("Combining them", "Mean-variance optimization across momentum, pairs, stocks and bonds.")
+        finding("M3, efficient frontier", "The optimizer lost to splitting money evenly.",
+                "Fit on 2011–2018, max Sharpe put 40% in pairs and 40% in bonds, the two calmest streams. Both broke "
+                "after 2018: bonds in the 2022 rate shock, pairs as their relationships dissolved. Equal weights won.",
+                "m3_allocation", "m3_metrics")
+        finding("M12, robust allocation", "Shrinkage and risk parity didn't rescue it.",
+                "Ledoit-Wolf and Bayes-Stein shrinkage moved the estimates but not the weights: the 40% cap was "
+                "binding either way. Risk parity did worse, because it owns the most of whatever was least volatile, "
+                "which is exactly what broke.", "m12_allocation", "m12_metrics")
+
+        chapter("Is any of it real?", "Formal inference on the out-of-sample record.")
+        finding("M8, significance", "No difference survives a significance test.",
+                "A Sharpe ratio from eight years of daily data has a standard error near 0.36, as large as every gap "
+                "in the verdict. Every 95% interval overlaps every other, and none of the head-to-head comparisons "
+                "is significant.", "m8_sharpe_ci", "m8_differences")
+        finding("M11, factor attribution", "No strategy has alpha after the standard factors.",
+                "Regressed on Fama-French 5 + momentum, every out-of-sample alpha is within noise of zero (largest "
+                f"|t| <b>{alpha_t:.2f}</b>). Momentum is mostly a market position with a modest momentum tilt.",
+                "m11_factors", "m11_factors",
+                ["strategy", "period", "alpha/yr", "t(alpha)", "β Mkt-RF", "β Mom", "R²"])
+        finding("M13, many test periods", "Thirteen more test years tell the same story.",
+                "Re-fitting everything at every year boundary from 2014 gives a 12.8-year out-of-sample record. "
+                "Intervals narrow by about a quarter; the rankings hold; nothing becomes significant. The pairs book's "
+                f"Sharpe over the whole span is <b>{cell('m13_summary', 'Sharpe 2014–2026', strategy='Pairs portfolio (5)')}</b>.",
+                "m13_walkforward", "m13_summary",
+                ["strategy", "Sharpe 2014–2026", "95% CI low", "95% CI high", "years beating SPY"])
+
+        chapter("Risk", "Forecasting losses, then checking the forecasts.")
+        finding("M4, Monte Carlo", "Static risk models broke after 2018.",
+                "A block bootstrap captures fat daily tails that a normal model misses, but both were fit on the calm "
+                "2011–2018 period and breached their 99% VaR two to six times too often once volatility rose.",
+                "m4_montecarlo", "m4_calibration")
+        finding("M9, volatility-aware VaR", "Scaling history by today's volatility fixed it.",
+                "Filtered historical simulation, today's EWMA volatility times the train period's tail shape, "
+                "passes the Kupiec coverage test at both 95% and 99% for every portfolio. A normal tail with the "
+                "same volatility still fails at 99%.", "m9_var_backtest", "m9_var_backtest",
+                ["portfolio", "model", "breach95", "breach99", "Kupiec p99"])
+
+        chapter("Another market", "The same design on 48 Indian large caps, with Indian costs and interest rates.")
+        finding("M14, India", "In India the same design failed faster.",
+                "Securities transaction tax on every buy and sell doubles costs, and a 5–7% short rate raises the bar. "
+                "Momentum looked superb in sample and fell to the index's level out of sample; pairs that stayed "
+                "cointegrated still lost money after costs.", "m14_india", "m14_us_vs_india")
+        finding("M15, survivorship", "The one significant result was hindsight.",
+                "Rebuilt on the Nifty 50's actual membership on each date, equal-weight's edge over the index is no "
+                "longer significant, and half of Indian momentum's in-sample return disappears. Picking today's "
+                "winners was the strategy.", "m15_survivorship", "m15_tests")
     else:
-        st.info("Verdict table not generated yet: run `python run.py` once. The other tabs work without it.")
-    st.markdown("**No strategy beat a passive benchmark out of sample.** Momentum didn't beat equal-weighting its own "
-                "universe; the pairs screen found chance-level cointegration that vanished after 2018; the optimizer "
-                "lost to a naive 25%-each mix on Sharpe (but cut SPY's drawdown by two thirds); and static risk "
-                "models under-predicted post-2018 tail losses. **None of these Sharpe gaps is statistically "
-                "significant** (every 95% interval spans about ±0.7), and an EWMA-filtered VaR passes the backtest "
-                "the static ones fail. See the README's M8 and M9 sections. Use the tabs to see how sensitive "
-                "each result is.")
+        st.info("Findings appear here after `python run.py` has generated the results.")
+
+# ---------------------------------------------------------------- how it was tested
+with outer[2]:
+    st.markdown("""
+<div class="ql-check">
+<p><b>One split, set on day one.</b> Every parameter, pair, hedge ratio and portfolio weight was fit on 2010–2018.
+2019–2026 was evaluated once. The yearly walk-forward (M13) repeats this at 13 cutoffs.</p>
+<p><b>No look-ahead.</b> Strategies only output target positions; a single engine holds them from the next day.
+A test feeds it a signal that knows tomorrow's return and checks that it earns nothing.</p>
+<p><b>Real costs and real interest.</b> 10 bps per unit of turnover in the US, 20 bps in India (securities
+transaction tax). Idle cash earns T-bills or India's call-money rate; Sharpe ratios are measured over them.</p>
+<p><b>Inference, not eyeballing.</b> Block-bootstrap confidence intervals, paired difference tests, the Deflated
+Sharpe Ratio, Newey-West factor regressions, and Kupiec and Christoffersen tests for every VaR model.</p>
+<p><b>Reproducible.</b> Prices, rates and factors are cached in the repository. A fresh machine regenerates every
+results table byte for byte, and continuous integration checks this on every push.</p>
+<p><b>What it can't fix.</b> The US universe is today's large caps, chosen with hindsight; M15 shows what that is
+worth in India. Free data has no prices for companies that were acquired or went bust.</p>
+</div>
+""", unsafe_allow_html=True)
+
+# ---------------------------------------------------------------- explore (panels below render into `lab`)
+with outer[1]:
+    st.markdown('<p class="ql-body">Every control re-runs the same tested code behind the findings. The defaults are '
+                'the research settings. Any setting chosen after looking at the 2019–2026 results is fit on the '
+                'test period, so treat what you find here as a sensitivity check, not a discovery.</p>',
+                unsafe_allow_html=True)
+    cost = st.slider("Transaction cost (bps per unit of turnover)", 0, 50, COST_BPS, key="cost")
+    lab = st.tabs(["Momentum", "Pairs", "Allocation", "Monte Carlo"])
+
+st.markdown(f'<p class="ql-foot">Quant Lab. Research code, not investment advice. '
+            f'<a href="{REPO}" target="_blank">Source on GitHub</a>.</p>', unsafe_allow_html=True)
+
 
 # ---------------------------------------------------------------- M1
-with tabs[1]:
+with lab[0]:
     c1, c2, c3, c4 = st.columns(4)
     lookback = c1.slider("Lookback (months)", 3, 24, 12)
     skip = c2.slider("Skip most recent (months)", 0, 3, 1)
@@ -124,7 +338,7 @@ with tabs[1]:
         show_table(metrics_table(res, rf))
 
 # ---------------------------------------------------------------- M2
-with tabs[2]:
+with lab[1]:
     scan = scanned()
     c1, c2, c3, c4, c5 = st.columns(5)
     n_pairs = c1.slider("Pairs to trade", 1, 6, 5)
@@ -180,7 +394,7 @@ with tabs[2]:
                + ", ".join(f"{lab} {p:.2f}" for lab, p in zip(labels, test_p)) + " (above 0.05 = relationship gone).")
 
 # ---------------------------------------------------------------- M3
-with tabs[3]:
+with lab[2]:
     c1, c2 = st.columns([2, 1])
     universe = c1.radio("Universe", ["Strategies + SPY + BND", "8 sector baskets + BND"], horizontal=True)
     rets = streams(cost) if universe.startswith("Strategies") else sector_streams(prices)
@@ -232,7 +446,7 @@ with tabs[3]:
         show_table(metrics_table(res, rf))
 
 # ---------------------------------------------------------------- M4
-with tabs[4]:
+with lab[3]:
     c1, c2, c3, c4 = st.columns(4)
     pname = c1.selectbox("Portfolio", ["Max-Sharpe (M3)", "Equal-weight 4", "SPY"])
     n_paths = c2.slider("Paths", 1000, 10000, 5000, 1000)

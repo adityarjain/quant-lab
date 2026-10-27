@@ -420,7 +420,7 @@ def test_app():
     assert round(sharpe(1, "Pairs portfolio"), 2) == 0.17
     assert round(sharpe(3, "Equal-weight 4"), 2) == 0.76 and round(sharpe(3, "Max-Sharpe (train fit)"), 2) == 0.52
 
-    at.sidebar.slider[0].set_value(0).run()  # zero costs -> net == gross through the same engine
+    at.slider(key="cost").set_value(0).run()  # zero costs -> net == gross through the same engine
     assert not at.exception
     m1 = at.dataframe[0].value
     assert np.allclose(m1["Sharpe (net)"], m1["Sharpe (gross)"])

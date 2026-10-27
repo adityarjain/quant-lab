@@ -21,7 +21,7 @@ Read-only git (`status`, `diff`, `log`) is fine.
 
 ## Project
 
-Quant Portfolio Lab: one integrated research project (not four separate tutorials). Research question:
+Quant Lab: one integrated research project (not four separate tutorials). Research question:
 > Do momentum and pairs trading survive realistic costs out-of-sample, and does combining them with mean-variance optimization improve risk-adjusted returns and tail risk?
 
 The repo must read like a research note, covering for every module: the Idea, the Math, reproducible Code, Results (including what failed), and a researcher-style README.
@@ -111,6 +111,8 @@ Any new fitted component must also be re-fit per cutoff in `walkforward.cutoff_f
 
 Optimizers are judged by their defining property (feasibility, equal risk contributions), not by a solver's status flag: SLSQP status 8 is accepted only when feasible, and risk parity uses exact coordinate descent.
 - `test_app`: the dashboard runs headless (Streamlit `AppTest`) with no errors and its defaults reproduce the published test Sharpe ratios. If README numbers change, update the expected values there too.
+
+`app.py` layout: hero + verdict ledger, then tabs Findings / Explore the data / How it was tested. Copy numbers are read from `figures/*.md` via `cell()`/`md()`, never typed in; styling lives in one CSS block and `.streamlit/config.toml` (graphite `#1a1a19` = the figures' surface, Newsreader + Public Sans). If a finding's wording depends on a result, re-read it after `python run.py`.
 
 `app.py` is UI only: it must call the same module functions as `run.py` (no duplicated strategy or metric logic), and its defaults must equal the research settings. New tunable parameters go in as optional arguments whose defaults are the module constants, so `run.py` output stays byte-identical.
 

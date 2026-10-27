@@ -1,9 +1,13 @@
 [theme]
 base = "dark"
-backgroundColor = "#1a1a19"
-secondaryBackgroundColor = "#232322"
-textColor = "#ffffff"
-primaryColor = "#3987e5"
+backgroundColor = "#1a1a19"        # the research figures' own surface
+secondaryBackgroundColor = "#232321"
+textColor = "#ECEAE4"
+primaryColor = "#3987e5"           # validated chart blue, used for controls only
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
 
 [server]
 headless = true

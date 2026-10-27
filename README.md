@@ -1,4 +1,4 @@
-# Quant Portfolio Lab
+# Quant Lab
 
 [![tests](https://github.com/adityarjain/quant-portfolio-lab/actions/workflows/tests.yml/badge.svg)](https://github.com/adityarjain/quant-portfolio-lab/actions/workflows/tests.yml)
 
@@ -710,7 +710,7 @@ Each item comes from a specific failure above. All of them would need to be fit 
 ```bash
 streamlit run app.py
 ```
-Five tabs (Verdict, M1–M4) recompute live from the tested modules, so every slider goes through the same engine, cost model, T-bill rate and train/test split as the paper. It opens on the research defaults, and `tests.py` checks that those defaults reproduce the published test-period Sharpe ratios. You can vary transaction costs, momentum lookback and holding fraction, pairs window and thresholds, the optimizer's weight cap, and Monte Carlo paths, horizon and block length.
+It opens on the verdict: every hypothesis with its answer and the number behind it, followed by three tabs. **Findings** walks through the results in the order they were run, each claim with its evidence and figure. **Explore the data** re-runs the momentum, pairs, allocation and Monte Carlo code live, so every control goes through the same engine, cost model, short rate and train/test split as the write-up. **How it was tested** summarizes the safeguards. Numbers in the page's text are read from the `figures/*.md` tables that `run.py` writes, so the copy can't drift from the results, and `tests.py` checks that the Explore defaults reproduce the published Sharpe ratios.
 
 Use it to see **how fragile each result is**, not to search for better parameters: any setting chosen after looking at the 2019+ numbers is fit on the test period and is no longer an out-of-sample result. The sidebar says so too.
 
