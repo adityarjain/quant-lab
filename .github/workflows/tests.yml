@@ -19,12 +19,12 @@ jobs:
         run: python tests.py
 
   reproduce:
-    # Every results table must regenerate byte-for-byte from the committed price/T-bill caches.
-    # Non-blocking until it has passed on Linux once: last-digit float differences between macOS and
-    # Linux BLAS could flip a rounded number, which would be a platform artefact, not a research change.
+    # Every results table must regenerate byte-for-byte from the committed price, rate and factor caches.
+    # Required: verified identical on macOS and Linux (M13, M14 runs). If it ever fails, either a result
+    # changed (update README numbers and commit the new figures/*.md) or a platform float difference
+    # flipped a rounded digit (investigate before relaxing this check).
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
